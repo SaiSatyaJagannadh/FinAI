@@ -134,20 +134,20 @@ const RiskAnalysisService = {
     } else if (interestCoverage >= 3) {
       score += 5; // Borderline coverage
     } else if (interestCoverage >= 1.5) {
-      score -= 10; # Insufficient coverage
+      score -= 10; //Insufficientcoverage
     } else {
-      score -= 20; # Very poor coverage
+      score -= 20; //Verypooroverage
     }
 
-    # Current ratio (liquidity) also affects credit risk
+    // Current ratio (liquidity) also affects credit risk
     if (currentRatio >= 2) {
-      score += 5; # Good short-term liquidity
+      score += 5; // Good short-term liquidity
     } else if (currentRatio >= 1.5) {
-      score += 3; # Adequate liquidity
+      score += 3; // Adequate liquidity
     } else if (currentRatio >= 1) {
-      score += 0; # Minimum acceptable
+      score += 0; // Minimum acceptable
     } else {
-      score -= 10; # Poor liquidity increases credit risk
+      score -= 10; // Poor liquidity increases credit risk
     }
 
     return {
@@ -169,37 +169,37 @@ const RiskAnalysisService = {
 
     let score = 50; // Start with medium risk
 
-    # Daily dollar volume (liquidity proxy)
-    # Assuming average price ~ marketCap / sharesOutstanding, but we'll use a simpler approach
-    const dollarVolume = avgVolume * (stockData.currentPrice || 100); # Rough estimate
+    // Daily dollar volume (liquidity proxy)
+    // Assuming average price ~ marketCap / sharesOutstanding, but we'll use a simpler approach
+    const dollarVolume = avgVolume * (stockData.currentPrice || 100); // Rough estimate
 
-    if (dollarVolume >= 1000000000) { # $1B+ daily volume
+    if (dollarVolume >= 1000000000) { // $1B+ daily volume
       score += 20;
-    } else if (dollarVolume >= 500000000) { # $500M+ daily volume
+    } else if (dollarVolume >= 500000000) { // $500M+ daily volume
       score += 15;
-    } else if (dollarVolume >= 100000000) { # $100M+ daily volume
+    } else if (dollarVolume >= 100000000) { // $100M+ daily volume
       score += 10;
-    } else if (dollarVolume >= 50000000) { # $50M+ daily volume
+    } else if (dollarVolume >= 50000000) { // $50M+ daily volume
       score += 5;
-    } else if (dollarVolume >= 10000000) { # $10M+ daily volume
+    } else if (dollarVolume >= 10000000) { // $10M+ daily volume
       score += 0;
-    } else if (dollarVolume >= 5000000) { # $5M+ daily volume
+    } else if (dollarVolume >= 5000000) { // $5M+ daily volume
       score -= 5;
     } else {
-      score -= 15; # Very low liquidity
+      score -= 15; // Very low liquidity
     }
 
-    # Bid-ask spread (transaction cost)
+    // Bid-ask spread (transaction cost)
     if (bidAskSpread <= 0.1) {
-      score += 10; # Very tight spread
+      score += 10; // Very tight spread
     } else if (bidAskSpread <= 0.25) {
-      score += 5; # Reasonable spread
+      score += 5; // Reasonable spread
     } else if (bidAskSpread <= 0.5) {
-      score += 0; # Average spread
+      score += 0; // Average spread
     } else if (bidAskSpread <= 1.0) {
-      score -= 5; # Wide spread
+      score -= 5; // Wide spread
     } else {
-      score -= 10; # Very wide spread
+      score -= 10; // Very wide spread
     }
 
     return {
@@ -218,11 +218,11 @@ const RiskAnalysisService = {
     const roe = stockData.roe || 0;
     const roa = stockData.roa || 0;
     const operatingMargin = stockData.operatingMargin || 0;
-    const managementScore = stockData.managementScore || 50; # Would come from qualitative analysis
+    const managementScore = stockData.managementScore || 50; // Would come from qualitative analysis
 
-    let score = 50; # Start with medium risk
+    let score = 50; // Start with medium risk
 
-    # ROE analysis
+    // ROE analysis
     if (roe >= 20) {
       score += 15;
     } else if (roe >= 15) {
@@ -235,7 +235,7 @@ const RiskAnalysisService = {
       score -= 10;
     }
 
-    # ROA analysis
+    // ROA analysis
     if (roa >= 10) {
       score += 10;
     } else if (roa >= 7) {
@@ -246,7 +246,7 @@ const RiskAnalysisService = {
       score -= 5;
     }
 
-    # Operating margin analysis
+    // Operating margin analysis
     if (operatingMargin >= 20) {
       score += 10;
     } else if (operatingMargin >= 15) {
@@ -259,7 +259,7 @@ const RiskAnalysisService = {
       score -= 10;
     }
 
-    # Management quality (placeholder - would be qualitative)
+    // Management quality (placeholder - would be qualitative)
     if (managementScore >= 80) {
       score += 10;
     } else if (managementScore >= 60) {
@@ -285,31 +285,31 @@ const RiskAnalysisService = {
    */
   _analyzeSectorRisk: function(stockData) {
     const sector = stockData.sector || 'Unknown';
-    # In a real implementation, this would use sector risk data
-    # For now, we'll use a simplified approach
+    // In a real implementation, this would use sector risk data
+    // For now, we'll use a simplified approach
 
     const riskScores = {
-      'Banking': 60, # Regulatory risk, credit cycles
-      'Insurance': 55, # Regulatory, interest rate sensitivity
-      'Pharma': 50, # Regulatory (FDA), patent cliffs
-      'IT': 45, # Competition, obsolescence risk
-      'FMCG': 40, # Stable demand, brand risk
-      'Auto': 55, # Cyclical, disruption risk (EV)
-      'Energy': 65, # Commodity prices, regulatory, ESG
-      'Utilities': 35, # Regulated but stable
-      'Real Estate': 50, # Interest rate sensitivity, cyclical
+      'Banking': 60, // Regulatory risk, credit cycles
+      'Insurance': 55, // Regulatory, interest rate sensitivity
+      'Pharma': 50, // Regulatory (FDA), patent cliffs
+      'IT': 45, // Competition, obsolescence risk
+      'FMCG': 40, // Stable demand, brand risk
+      'Auto': 55, // Cyclical, disruption risk (EV)
+      'Energy': 65, // Commodity prices, regulatory, ESG
+      'Utilities': 35, // Regulated but stable
+      'Real Estate': 50, // Interest rate sensitivity, cyclical
       'default': 50
     };
 
     const baseRisk = riskScores[sector] || riskScores.default;
-    # Convert to our scoring system (higher = less risky)
+    // Convert to our scoring system (higher = less risky)
     let score = 100 - baseRisk;
 
-    # Adjust for company-specific factors within sector
-    # Market leadership reduces risk
-    if (stockData.marketShare && stockData.marketShare > 0.2) { # >20% market share
+    // Adjust for company-specific factors within sector
+    // Market leadership reduces risk
+    if (stockData.marketShare && stockData.marketShare > 0.2) { // >20% market share
       score += 10;
-    } else if (stockData.marketShare && stockData.marketShare > 0.1) { # >10% market share
+    } else if (stockData.marketShare && stockData.marketShare > 0.1) { // >10% market share
       score += 5;
     }
 
@@ -326,38 +326,38 @@ const RiskAnalysisService = {
    * Analyze geopolitical risk (exposure to unstable regions, currency risk)
    */
   _analyzeGeopoliticalRisk: function(stockData) {
-    const foreignRevenue = stockData.foreignRevenue || 0; # Percentage
-    const exportDependence = stockData.exportDependence || 0; # Percentage
+    const foreignRevenue = stockData.foreignRevenue || 0; // Percentage
+    const exportDependence = stockData.exportDependence || 0; // Percentage
     const countriesOperatedIn = stockData.countriesOperatedIn || [];
 
-    let score = 50; # Start with medium risk
+    let score = 50; // Start with medium risk
 
-    # Foreign revenue exposure
+    // Foreign revenue exposure
     if (foreignRevenue >= 50) {
-      score -= 15; # High foreign exposure = higher geopolitical risk
+      score -= 15; // High foreign exposure = higher geopolitical risk
     } else if (foreignRevenue >= 30) {
       score -= 10;
     } else if (foreignRevenue >= 15) {
       score -= 5;
-    } # Less than 15% foreign revenue gets no penalty
+    } // Less than 15% foreign revenue gets no penalty
 
-    # Export dependence (for manufacturing companies)
+    // Export dependence (for manufacturing companies)
     if (exportDependence >= 40) {
       score -= 10;
     } else if (exportDependence >= 20) {
       score -= 5;
     }
 
-    # Number of countries (diversification can help or hurt)
+    // Number of countries (diversification can help or hurt)
     const countryCount = countriesOperatedIn.length;
     if (countryCount >= 10) {
-      score += 5; # Diversification benefit
+      score += 5; // Diversification benefit
     } else if (countryCount >= 5) {
       score += 0;
     } else if (countryCount >= 2) {
-      score -= 5; # Some foreign exposure but not diversified
+      score -= 5; // Some foreign exposure but not diversified
     }
-    # Domestic only (<2 countries) gets no adjustment
+    // Domestic only (<2 countries) gets no adjustment
 
     return {
       foreignRevenue: parseFloat(foreignRevenue.toFixed(1)),
@@ -373,23 +373,23 @@ const RiskAnalysisService = {
    * Analyze disruption risk (technological, business model obsolescence)
    */
   _analyzeDisruptionRisk: function(stockData) {
-    const rdIntensity = stockData.rdIntensity || 0; # R&D as % of revenue
+    const rdIntensity = stockData.rdIntensity || 0; // R&D as % of revenue
     const patentCount = stockData.patentCount || 0;
     const averageAgeOfAssets = stockData.averageAgeOfAssets || 0;
-    const businessModelAge = stockData.businessModelAge || 0; # Years since major innovation
+    const businessModelAge = stockData.businessModelAge || 0; // Years since major innovation
 
-    let score = 50; # Start with medium risk
+    let score = 50; // Start with medium risk
 
-    # R&D intensity (higher = better positioned for innovation)
+    // R&D intensity (higher = better positioned for innovation)
     if (rdIntensity >= 10) {
-      score += 15; # Heavy investment in R&D
+      score += 15; // Heavy investment in R&D
     } else if (rdIntensity >= 5) {
-      score += 10; # Moderate R&D
+      score += 10; // Moderate R&D
     } else if (rdIntensity >= 2) {
-      score += 5; # Some R&D
-    } # Less than 2% R&D gets no bonus
+      score += 5; // Some R&D
+    } // Less than 2% R&D gets no bonus
 
-    # Patent portfolio (innovation protection)
+    // Patent portfolio (innovation protection)
     if (patentCount >= 1000) {
       score += 10;
     } else if (patentCount >= 500) {
@@ -400,7 +400,7 @@ const RiskAnalysisService = {
       score += 3;
     }
 
-    # Asset age (newer assets = less obsolescence risk)
+    // Asset age (newer assets = less obsolescence risk)
     if (averageAgeOfAssets <= 5) {
       score += 10;
     } else if (averageAgeOfAssets <= 10) {
@@ -413,7 +413,7 @@ const RiskAnalysisService = {
       score -= 10;
     }
 
-    # Business model age (newer models = more adaptable)
+    // Business model age (newer models = more adaptable)
     if (businessModelAge <= 5) {
       score += 10;
     } else if (businessModelAge <= 10) {

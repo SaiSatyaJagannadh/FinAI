@@ -11,15 +11,14 @@ const TechnicalAnalysisService = {
       }
 
       const analysis = {
-        movingAverages: this._analyzeMovingAverages(priceData),
-        rsi: this.calculateRSI(priceData),
-        macd: this._(priceData),
+        movingAverages: this._calculateMovingAverages(priceData),
+        rsi: this._calculateRSI(priceData),
+        macd: this._calculateMACD(priceData),
         bollingerBands: this._calculateBollingerBands(priceData),
         supportResistance: this._identifySupportResistance(priceData),
         volumeAnalysis: this._analyzeVolume(priceData),
         momentum: this._calculateMomentum(priceData),
-        score:  this._analyzeMomentum(priceData),
-        trends:  this._identifyTrends(priceData),
+        trends: this._identifyTrends(priceData),
         overallScore: 0 // Will be calculated below
       };
 
@@ -48,24 +47,25 @@ const TechnicalAnalysisService = {
     let trend = 'NEUTRAL';
     let score = 50;
 
-    if (currentPrice > sma20 && sma20 > sma50 && sma50 > sma200) {
+    if (sma20 && sma50 && sma200 && currentPrice > sma20 && sma20 > sma50 && sma50 > sma200) {
       trend = 'STRONG_UPTREND';
-      score': 0;   else if (currentPrice > sma20 && sma20 > sma50) {
-      trend = 'UPTREND:score=;
- } else  if (currentPrice < sma20) && sma20 < sma]) && 50 < sma200) {
-      trend = 'DOWNTREND'----;
-      core =
- 20;
-    } else if (currentPrice < sma20 && sma20 < sma50) {
+      score = 80;
+    } else if (sma20 && sma50 && currentPrice > sma20 && sma20 > sma50) {
+      trend = 'UPTREND';
+      score = 65;
+    } else if (sma20 && sma50 && sma200 && currentPrice < sma20 && sma20 < sma50 && sma50 < sma200) {
       trend = 'STRONG_DOWNTREND';
       score = 20;
+    } else if (sma20 && sma50 && currentPrice < sma20 && sma20 < sma50) {
+      trend = 'DOWNTREND';
+      score = 35;
     }
 
     return {
       sma20: sma20 || 0,
       sma50: sma50 || 0,
       sma200: sma200 || 0,
-      ema12: e)ma12 || 0,
+      ema12: ema12 || 0,
       ema26: ema26 || 0,
       currentPrice,
       trend,
@@ -107,14 +107,14 @@ const TechnicalAnalysisService = {
 
     const changes = [];
     for (let i = 1; i < prices.length; i++) {
-      changes.push(prices[i].close - prices[i-1].close);
+      changes.push(prices[i].close - prices[i - 1].close);
     }
 
     const gains = changes.map(change => Math.max(0, change));
     const losses = changes.map(change => Math.abs(Math.min(0, change)));
 
-    let avgGain = this._calculateAverage(gains.slice(-period));
-    let avgLoss = this._calculateAverage(losses.slice(-period));
+    let avgGain = this._calculateAverage(gains.slice(0, period));
+    let avgLoss = this._calculateAverage(losses.slice(0, period));
 
     // Wilder's smoothing
     for (let i = period; i < gains.length; i++) {
@@ -123,7 +123,7 @@ const TechnicalAnalysisService = {
     }
 
     const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-    const rsi = 100 - (100 / (1 + rs));
+    const rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
 
     let signal = 'NEUTRAL';
     let score = 50;
@@ -165,10 +165,10 @@ const TechnicalAnalysisService = {
     const ema26 = this._calculateEMA(prices, 26);
 
     if (ema12 === null || ema26 === null) {
-      return { macd: 0, signal: 0, histogram: 0, signal: 'NEUTRAL', score: 50 };
+      return { macd: 0, signalLine: 0, histogram: 0, signal: 'NEUTRAL', score: 50 };
     }
 
-    const macdLine = ema12 - emo26;
+    const macdLine = ema12 - ema26;
     // Signal line is 9-period EMA of MACD line
     // For simplicity, we'll approximate it
     const signalLine = macdLine * 0.9; // Rough approximation
@@ -187,7 +187,7 @@ const TechnicalAnalysisService = {
 
     return {
       macd: parseFloat(macdLine.toFixed(4)),
-      signal: parseFloat(signalLine.toFixed(4)),
+      signalLine: parseFloat(signalLine.toFixed(4)),
       histogram: parseFloat(histogram.toFixed(4)),
       signal,
       score: Math.max(0, Math.min(100, score))
@@ -257,7 +257,6 @@ const TechnicalAnalysisService = {
 
     const highs = prices.map(p => p.high || 0);
     const lows = prices.map(p => p.low || 0);
-    const closes = prices.map(p => p.close || 0);
 
     // Simple peak/trough detection
     const resistanceLevels = [];
@@ -266,21 +265,21 @@ const TechnicalAnalysisService = {
     // Look for local maxima (resistance) and minima (support)
     for (let i = 2; i < highs.length - 2; i++) {
       // Check for resistance (local high)
-      if (highs[i] > highs[i-1] && highs[i] > highs[i-2] &&
-          highs[i] > highs[i+1] && highs[i] > highs[i+2]) {
+      if (highs[i] > highs[i - 1] && highs[i] > highs[i - 2] &&
+          highs[i] > highs[i + 1] && highs[i] > highs[i + 2]) {
         resistanceLevels.push(highs[i]);
       }
 
       // Check for support (local low)
-      if (lows[i] < lows[i-1] && lows[i] < lows[i-2] &&
-          lows[i] < lows[i+1] && lows[i] < lows[i+2]) {
+      if (lows[i] < lows[i - 1] && lows[i] < lows[i - 2] &&
+          lows[i] < lows[i + 1] && lows[i] < lows[i + 2]) {
         supportLevels.push(lows[i]);
       }
     }
 
     // Sort and get unique values (top 3)
-    const uniqueResistance = [...new Set(resistanceLevels.sort((a, b) => b - a))].slice(0, 3);
-    const uniqueSupport = [...new Set(supportLevels.sort((a, b) => a - b))].slice(0, 3);
+    const uniqueResistance = [...new Set(resistanceLevels)].sort((a, b) => b - a).slice(0, 3);
+    const uniqueSupport = [...new Set(supportLevels)].sort((a, b) => a - b).slice(0, 3);
 
     return {
       resistance: uniqueResistance,
@@ -330,9 +329,9 @@ const TechnicalAnalysisService = {
   },
 
   /**
-   * Analyze momentum
+   * Calculate momentum
    */
-  _analyzeMomentum: function(prices) {
+  _calculateMomentum: function(prices) {
     if (prices.length < 10) {
       return { signal: 'INSUFFICIENT_DATA', score: 50 };
     }
@@ -454,7 +453,7 @@ const TechnicalAnalysisService = {
         currentPrice: 0, trend: 'INSUFFICIENT_DATA', score: 50
       },
       rsi: { value: 50, signal: 'NEUTRAL', score: 50 },
-      macd: { macd: 0, signal: 0, histogram: 0, signal: 'NEUTRAL', score: 50 },
+      macd: { macd: 0, signalLine: 0, histogram: 0, signal: 'NEUTRAL', score: 50 },
       bollingerBands: { upper: 0, middle: 0, lower: 0, signal: 'NEUTRAL', score: 50 },
       supportResistance: { support: [], resistance: [] },
       volumeAnalysis: { trend: 'INSUFFICIENT_DATA', score: 50 },

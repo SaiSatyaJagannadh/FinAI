@@ -171,13 +171,13 @@ class FundamentalAnalysisService {
 
     if (pbRatio > 0) {
       if (pbRatio < 1) {
-        score = 75; # Potentially undervalued (trading below book value)
+        score = 75; // Potentially undervalued (trading below book value)
         interpretation = 'Trading below book value - potential value';
       } else if (pbRatio > 3) {
-        score = 30; # Possibly overvalued
+        score = 30; // Possibly overvalued
         interpretation = 'Trading significantly above book value';
       } else {
-        # Reasonable range
+        // Reasonable range
         score = 50 + (25 * (1 - Math.abs(pbRatio - 1.5) / 1.5));
         interpretation = 'Reasonable P/B ratio';
       }
@@ -205,19 +205,19 @@ class FundamentalAnalysisService {
 
     if (debtToEquity >= 0) {
       if (debtToEquity === 0) {
-        score = 90; # Excellent - no debt
+        score = 90; // Excellent - no debt
         interpretation = 'Debt-free balance sheet';
       } else if (debtToEquity < maxDebtToEquity * 0.5) {
-        score = 80; # Good - low debt
+        score = 80; // Good - low debt
         interpretation = 'Low debt levels';
       } else if (debtToEquity < maxDebtToEquity) {
-        score = 60; # Moderate - acceptable debt
+        score = 60; // Moderate - acceptable debt
         interpretation = 'Moderate debt levels';
       } else if (debtToEquity < maxDebtToEquity * 1.5) {
-        score = 40; # High - concerning debt
+        score = 40; // High - concerning debt
         interpretation = 'High debt levels - monitor closely';
       } else {
-        score = 20; # Very high - risky
+        score = 20; // Very high - risky
         interpretation = 'Very high debt - significant risk';
       }
     }
@@ -240,19 +240,19 @@ class FundamentalAnalysisService {
 
     if (currentRatio > 0) {
       if (currentRatio >= 2) {
-        score = 85; # Excellent liquidity
+        score = 85; // Excellent liquidity
         interpretation = 'Strong liquidity position';
       } else if (currentRatio >= 1.5) {
-        score = 70; # Good liquidity
+        score = 70; // Good liquidity
         interpretation = 'Adequate liquidity';
       } else if (currentRatio >= 1) {
-        score = 50; # Minimum acceptable
+        score = 50; // Minimum acceptable
         interpretation = 'Minimum liquidity threshold';
       } else if (currentRatio >= 0.5) {
-        score = 30; # Poor liquidity
+        score = 30; // Poor liquidity
         interpretation = 'Liquidity concerns';
       } else {
-        score = 15; # Very poor liquidity
+        score = 15; // Very poor liquidity
         interpretation = 'Severe liquidity issues';
       }
     }
@@ -268,26 +268,26 @@ class FundamentalAnalysisService {
    * Analyze Return on Equity (ROE)
    */
   _analyzeROE(stockData) {
-    const roe = stockData.roe || 0; # Percentage
+    const roe = stockData.roe || 0; // Percentage
 
     let score = 50;
     let interpretation = 'Moderate ROE';
 
     if (roe >= 0) {
       if (roe >= 20) {
-        score = 90; # Excellent
+        score = 90; // Excellent
         interpretation = 'Excellent return on equity';
       } else if (roe >= 15) {
-        score = 80; # Very good
+        score = 80; // Very good
         interpretation = 'Very good return on equity';
       } else if (roe >= 10) {
-        score = 60; # Good
+        score = 60; // Good
         interpretation = 'Good return on equity';
       } else if (roe >= 5) {
-        score = 40; # Adequate
+        score = 40; // Adequate
         interpretation = 'Adequate return on equity';
       } else {
-        score = 20; # Poor
+        score = 20; // Poor
         interpretation = 'Low return on equity - investigate causes';
       }
     }
@@ -303,26 +303,26 @@ class FundamentalAnalysisService {
    * Analyze Return on Assets (ROA)
    */
   _analyzeROA(stockData) {
-    const roa = stockData.roa || 0; # Percentage
+    const roa = stockData.roa || 0; // Percentage
 
     let score = 50;
     let interpretation = 'Moderate ROA';
 
     if (roa >= 0) {
       if (roa >= 10) {
-        score = 85; # Excellent
+        score = 85; // Excellent
         interpretation = 'Excellent return on assets';
       } else if (roa >= 7) {
-        score = 70; # Good
+        score = 70; // Good
         interpretation = 'Good return on assets';
       } else if (roa >= 5) {
-        score = 55; # Moderate
+        score = 55; // Moderate
         interpretation = 'Moderate return on assets';
       } else if (roa >= 3) {
-        score = 40; # Adequate
+        score = 40; // Adequate
         interpretation = 'Adequate return on assets';
       } else {
-        score = 20; # Poor
+        score = 20; // Poor
         interpretation = 'Low return on assets';
       }
     }
@@ -338,26 +338,26 @@ class FundamentalAnalysisService {
    * Analyze Profit Margin
    */
   _analyzeProfitMargin(stockData) {
-    const profitMargin = stockData.profitMargin || 0; # Percentage
+    const profitMargin = stockData.profitMargin || 0; // Percentage
 
     let score = 50;
     let interpretation = 'Moderate profit margin';
 
     if (profitMargin >= 0) {
       if (profitMargin >= 20) {
-        score = 90; # Excellent
+        score = 90; // Excellent
         interpretation = 'Excellent profit margin';
       } else if (profitMargin >= 15) {
-        score = 80; # Very good
+        score = 80; // Very good
         interpretation = 'Very good profit margin';
       } else if (profitMargin >= 10) {
-        score = 60; # Good
+        score = 60; // Good
         interpretation = 'Good profit margin';
       } else if (profitMargin >= 5) {
-        score = 40; # Adequate
+        score = 40; // Adequate
         interpretation = 'Adequate profit margin';
       } else {
-        score = 20; # Poor
+        score = 20; // Poor
         interpretation = 'Low profit margin';
       }
     }
@@ -394,15 +394,15 @@ class FundamentalAnalysisService {
    * Calculate growth score (placeholder - would integrate with growth analysis)
    */
   _calculateGrowthScore(stockData) {
-    # In a complete implementation, this would pull from growth analysis
-    # For now, use available growth data or default
+    // In a complete implementation, this would pull from growth analysis
+    // For now, use available growth data or default
     const revenueGrowth = stockData.revenueGrowth?.yoj || 0;
     const profitGrowth = stockData.profitGrowth?.yoj || 0;
 
-    let growthScore = 50; # Default
+    let growthScore = 50; // Default
 
     if (revenueGrowth > 0 || profitGrowth > 0) {
-      # Simple scoring based on growth rates
+      // Simple scoring based on growth rates
       const avgGrowth = (Math.max(revenueGrowth, 0) + Math.max(profitGrowth, 0)) / 2;
       if (avgGrowth >= 20) growthScore = 85;
       else if (avgGrowth >= 15) growthScore = 75;
