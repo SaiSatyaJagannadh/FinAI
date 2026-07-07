@@ -109,13 +109,23 @@ const analysisSchema = new mongoose.Schema({
     growthScore: Number,
     riskScore: Number,
     weightedScore: Number,
-    recommendation: {
-      action: String, // 'BUY', 'HOLD', 'SELL'
-      confidence: Number, // 0-100
-      targetPrice: Number,
-      stopLoss: Number,
-      investmentHorizon: String // 'SHORT-TERM', 'MEDIUM-TERM', 'LONG-TERM'
-    }
+  recommendation: {
+  action: {
+    type: String,
+    enum: ['BUY', 'HOLD', 'SELL']
+  },
+  confidence: {
+    type: String,
+    enum: ['LOW', 'MEDIUM', 'HIGH']
+  },
+  targetPrice: Number,
+  stopLoss: Number,
+  investmentHorizon: {
+    type: String,
+    enum: ['SHORT-TERM', 'MEDIUM-TERM', 'LONG-TERM']
+  },
+  score: Number
+}
   },
   // Metadata
   analyzedAt: {

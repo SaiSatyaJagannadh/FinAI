@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(kill 80554 *)",
+      "Bash(npm start *)"
+    ]
+  }
+}

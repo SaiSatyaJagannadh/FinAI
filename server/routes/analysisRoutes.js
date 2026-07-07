@@ -74,24 +74,185 @@ router.post('/:symbol', async (req, res) => {
       risk: riskAnalysis
     });
 
-    // Create analysis record
-    const analysis = new Analysis({
+    // Calculate EMA20 and EMA50 for moving averages
+    const priceData = stockData.priceData || [];
+    const ema20 = TechnicalAnalysisService._calculateEMA(priceData, 20);
+    const ema50 = TechnicalAnalysisService._calculateEMA(priceData, 50);
+
+    // Prepare data for database storage (matching schema)
+    const analysisData = {
       stock: stock._id,
-      ...fundamentalAnalysis,
-      ...technicalAnalysis,
+
+      fundamental: {
+        peRatio: fundamentalAnalysis.peRatio,
+        pegRatio: fundamentalAnalysis.pegRatio,
+        priceToBook: (fundamentalAnalysis.priceToBook.value !== undefined && fundamentalAnalysis.priceToBook.value !== null) ? fundamentalAnalysis.priceToBook.value : fundamentalAnalysis.priceToBook,
+        debtToEquity: (fundamentalAnalysis.debtToEquity.value !== undefined && fundamentalAnalysis.debtToEquity.value !== null) ? fundamentalAnalysis.debtToEquity.value : fundamentalAnalysis.debtToEquity,
+        currentRatio: (fundamentalAnalysis.currentRatio.value !== undefined && fundamentalAnalysis.currentRatio.value !== null) ? fundamentalAnalysis.currentRatio.value : fundamentalAnalysis.currentRatio,
+        roe: (fundamentalAnalysis.roe.value !== undefined && fundamentalAnalysis.roe.value !== null) ? fundamentalAnalysis.roe.value : fundamentalAnalysis.roe,
+        roa: (fundamentalAnalysis.roa.value !== undefined && fundamentalAnalysis.roa.value !== null) ? fundamentalAnalysis.roa.value : fundamentalAnalysis.roa,
+        profitMargin: (fundamentalAnalysis.profitMargin.value !== undefined && fundamentalAnalysis.profitMargin.value !== null) ? fundamentalAnalysis.profitMargin.value : fundamentalAnalysis.profitMargin,
+        scores: fundamentalAnalysis.scores
+      },
+      technical: {
+        rsi: (technicalAnalysis.rsi.value !== undefined && technicalAnalysis.rsi.value !== null) ? technicalAnalysis.rsi.value : 50,
+        macd: {
+          line: technicalAnalysis.macd.macd || 0,
+          signal: technicalAnalysis.macd.signalLine || 0,
+          histogram: technicalAnalysis.macd.histogram || 0
+        },
+        movingAverages: {
+          sma50: technicalAnalysis.movingAverages.sma50 || 0,
+          sma200: technicalAnalysis.movingAverages.sma200 || 0,
+          ema20: ema20 || 0,
+          ema50: ema50 || 0,
+          trend: technicalAnalysis.movingAverages.trend || 'NEUTRAL'
+        },
+        bollingerBands: {
+          upper: technicalAnalysis.bollingerBands.upper || 0,
+          middle: technicalAnalysis.bollingerBands.middle || 0,
+          lower: technicalAnalysis.bollingerBands.lower || 0
+        },
+        supportResistance: {
+          support: technicalAnalysis.supportResistance.support || [],
+          resistance: technicalAnalysis.supportResistance.resistance || []
+        },
+        score: technicalAnalysis.overallScore
+      },
       mutualFundConviction: mutualFundAnalysis,
-      ...growthAnalysis,
-      ...riskAnalysis,
-      'overall.recommendation': recommendation,
-      dataSources: ['SIMULATED_DATA'], // In real app: ['MoneyControl', 'Trendlyne', 'NSE', etc.
+      growth: growthAnalysis,
+      risk: {
+        beta: riskAnalysis.marketRisk.beta || 1,
+        volatility: riskAnalysis.marketRisk.volatility || 25,
+        maxDrawdown: 0, // Placeholder - would need historical data to calculate
+        sectorConcentrationRisk: 0, // Placeholder
+        geopoliticalRisk: riskAnalysis.geopoliticalRisk.score || 0,
+        disruptionRisk: riskAnalysis.disruptionRisk.score || 0,
+        score: riskAnalysis.overallScore
+      },
+
+      overall: {
+        fundamentalScore: fundamentalAnalysis.overallScore,
+        technicalScore: technicalAnalysis.overallScore,
+        convictionScore: mutualFundAnalysis.score,
+        growthScore: growthAnalysis.overallScore,
+        riskScore: riskAnalysis.overallScore,
+        weightedScore: recommendation.score,
+        recommendation
+      },
+
+      dataSources: ['SIMULATED_DATA'],
       analyzedAt: new Date()
-    });
+    };
+
+    // Create analysis record with database-compatible data
+    const analysis = new Analysis(analysisData);
+
+    // Prepare response object matching frontend expectations
+    const responseAnalysis = {
+      stock: stock._id,
+
+      fundamental: {
+        peRatio: fundamentalAnalysis.peRatio,
+        pegRatio: fundamentalAnalysis.pegRatio,
+        priceToBook: (fundamentalAnalysis.priceToBook.value !== undefined && fundamentalAnalysis.priceToBook.value !== null) ? fundamentalAnalysis.priceToBook.value : fundamentalAnalysis.priceToBook,
+        debtToEquity: (fundamentalAnalysis.debtToEquity.value !== undefined && fundamentalAnalysis.debtToEquity.value !== null) ? fundamentalAnalysis.debtToEquity.value : fundamentalAnalysis.debtToEquity,
+        currentRatio: (fundamentalAnalysis.currentRatio.value !== undefined && fundamentalAnalysis.currentRatio.value !== null) ? fundamentalAnalysis.currentRatio.value : fundamentalAnalysis.currentRatio,
+        roe: (fundamentalAnalysis.roe.value !== undefined && fundamentalAnalysis.roe.value !== null) ? fundamentalAnalysis.roe.value : fundamentalAnalysis.roe,
+        roa: (fundamentalAnalysis.roa.value !== undefined && fundamentalAnalysis.roa.value !== null) ? fundamentalAnalysis.roa.value : fundamentalAnalysis.roa,
+        profitMargin: (fundamentalAnalysis.profitMargin.value !== undefined && fundamentalAnalysis.profitMargin.value !== null) ? fundamentalAnalysis.profitMargin.value : fundamentalAnalysis.profitMargin,
+        scores: fundamentalAnalysis.scores
+      },
+      technical: {
+        rsi: {
+          value: (technicalAnalysis.rsi.value !== undefined && technicalAnalysis.rsi.value !== null) ? technicalAnalysis.rsi.value : 50,
+          signal: technicalAnalysis.rsi.signal || 'NEUTRAL'
+        },
+        macd: {
+          macd: technicalAnalysis.macd.macd || 0,
+          signal: technicalAnalysis.macd.signalLine || 0,
+          histogram: technicalAnalysis.macd.histogram || 0
+        },
+        movingAverages: {
+          sma50: technicalAnalysis.movingAverages.sma50 || 0,
+          sma200: technicalAnalysis.movingAverages.sma200 || 0,
+          ema20: ema20 || 0,
+          ema50: ema50 || 0,
+          trend: technicalAnalysis.movingAverages.trend || 'NEUTRAL'
+        },
+        bollingerBands: {
+          upper: technicalAnalysis.bollingerBands.upper || 0,
+          middle: technicalAnalysis.bollingerBands.middle || 0,
+          lower: technicalAnalysis.bollingerBands.lower || 0
+        },
+        supportResistance: {
+          support: technicalAnalysis.supportResistance.support || [],
+          resistance: technicalAnalysis.supportResistance.resistance || []
+        },
+        score: technicalAnalysis.overallScore
+      },
+      mutualFundConviction: mutualFundAnalysis,
+      growth: growthAnalysis,
+      risk: {
+        marketRisk: {
+          beta: riskAnalysis.marketRisk.beta || 1,
+          volatility: riskAnalysis.marketRisk.volatility || 25,
+          correlationToMarket: riskAnalysis.marketRisk.correlationToMarket || 0.7
+        },
+        creditRisk: {
+          debtToEquity: riskAnalysis.creditRisk.debtToEquity || 0,
+          interestCoverage: riskAnalysis.creditRisk.interestCoverage || 0,
+          currentRatio: riskAnalysis.creditRisk.currentRatio || 0
+        },
+        liquidityRisk: {
+          averageVolume: riskAnalysis.liquidityRisk?.averageVolume || 0,
+          bidAskSpread: riskAnalysis.liquidityRisk?.bidAskSpread || 0.5
+        },
+        operationalRisk: {
+          roe: riskAnalysis.operationalRisk.roe || 0,
+          roa: riskAnalysis.operationalRisk.roa || 0,
+          operatingMargin: riskAnalysis.operationalRisk.operatingMargin || 0
+        },
+        sectorRisk: {
+          sector: riskAnalysis.sectorRisk.sector || 'Unknown',
+          marketShare: riskAnalysis.sectorRisk.marketShare || 0
+        },
+        geopoliticalRisk: {
+          foreignRevenue: riskAnalysis.geopoliticalRisk.foreignRevenue || 0,
+          exportDependence: riskAnalysis.geopoliticalRisk.exportDependence || 0,
+          countriesOperatedIn: riskAnalysis.geopoliticalRisk.countriesOperatedIn || [],
+          countryCount: riskAnalysis.geopoliticalRisk.countryCount || 0
+        },
+        disruptionRisk: {
+          rdIntensity: riskAnalysis.disruptionRisk.rdIntensity || 0,
+          patentCount: riskAnalysis.disruptionRisk.patentCount || 0,
+          averageAgeOfAssets: riskAnalysis.disruptionRisk.averageAgeOfAssets || 0,
+          businessModelAge: riskAnalysis.disruptionRisk.businessModelAge || 0
+        },
+        maxDrawdown: 0, // Placeholder - would need historical data to calculate
+        sectorConcentrationRisk: 0, // Placeholder
+        score: riskAnalysis.overallScore
+      },
+
+      overall: {
+        fundamentalScore: fundamentalAnalysis.overallScore,
+        technicalScore: technicalAnalysis.overallScore,
+        convictionScore: mutualFundAnalysis.score,
+        growthScore: growthAnalysis.overallScore,
+        riskScore: riskAnalysis.overallScore,
+        weightedScore: recommendation.score,
+        recommendation
+      },
+
+      dataSources: ['SIMULATED_DATA'],
+      analyzedAt: new Date()
+    };
 
     await analysis.save();
 
     res.json({
       ...stock.toObject(),
-      analysis: analysis.toObject(),
+      analysis: responseAnalysis,
       cached: false
     });
   } catch (error) {
@@ -136,7 +297,7 @@ async function _generateMockStockData(stock) {
   // In a real application, this would fetch data from financial APIs
   // For demonstration, we'll generate realistic-looking mock data based on the symbol
 
-  const seed = stock.symbol.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  let seed = stock.symbol.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const pseudoRandom = (min, max) => {
     // Simple deterministic random based on seed
     const x = Math.sin(seed++) * 10000;
@@ -237,7 +398,7 @@ async function _generateMockStockData(stock) {
     eps: (100 + pseudoRandom(0, 900)) / (sectorBase.pe + variance * 5),
     beta: 0.8 + (pseudoRandom(0, 40) / 100), // 0.8 to 1.2
     volatility: 15 + (pseudoRandom(0, 30)), // 15-45%
-    correlationToMarket: 0.5 + (pseudoRandom(0, 0, 50) / 100), // 0.5-1.0
+    correlationToMarket: 0.5 + (pseudoRandom(0, 50) / 100), // 0.5-1.0
     interestCoverage: 3 + (pseudoRandom(0, 15)), // 3-18x
     // For risk analysis
     rdIntensity: Math.max(0, 2 + (pseudoRandom(0, 10) / 10)), // 2-12% R&D intensity
