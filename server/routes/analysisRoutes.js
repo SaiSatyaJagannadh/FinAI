@@ -59,7 +59,7 @@ router.post('/:symbol', async (req, res) => {
       riskAnalysis
     ] = await Promise.all([
       FundamentalAnalysisService.analyzeFundamentals(stockData),
-      TechnicalAnalysisService.analyzeTechnicals(stockData.priceData || []),
+      TechnicalAnalysisService.analyzeTechnicals(stockData.priceHistory || []),
       MutualFundAnalysisService.analyzeConvictionStockSymbol(stock.symbol, []),
       GrowthAnalysisService.analyzeGrowth(stockData),
       RiskAnalysisService.analyzeRisk(stockData)
@@ -75,7 +75,7 @@ router.post('/:symbol', async (req, res) => {
     });
 
     // Calculate EMA20 and EMA50 for moving averages
-    const priceData = stockData.priceData || [];
+    const priceData = stockData.priceHistory || [];
     const ema20 = TechnicalAnalysisService._calculateEMA(priceData, 20);
     const ema50 = TechnicalAnalysisService._calculateEMA(priceData, 50);
 
@@ -213,55 +213,51 @@ router.post('/:symbol', async (req, res) => {
           roa: riskAnalysis.operationalRisk.roa || 0,
           operatingMargin: riskAnalysis.operationalRisk.operatingMargin || 0
         },
-        sectorRisk: {
-          sector: riskAnalysis.sectorRisk.sector || 'Unknown',
-          marketShare: riskAnalysis.sectorRisk.marketShare || 0
-        },
-        geopoliticalRisk: {
-          foreignRevenue: riskAnalysis.geopoliticalRisk.foreignRevenue || 0,
-          exportDependence: riskAnalysis.geopoliticalRisk.exportDependence || 0,
-          countriesOperatedIn: riskAnalysis.geopoliticalRisk.countriesOperatedIn || [],
-          countryCount: riskAnalysis.geopoliticalRisk.countryCount || 0
-        },
-        disruptionRisk: {
-          rdIntensity: riskAnalysis.disruptionRisk.rdIntensity || 0,
-          patentCount: riskAnalysis.disruptionRisk.patentCount || 0,
-          averageAgeOfAssets: riskAnalysis.disruptionRisk.averageAgeOfAssets || 0,
-          businessModelAge: riskAnalysis.disruptionRisk.businessModelAge || 0
-        },
-        maxDrawdown: 0, // Placeholder - would need historical data to calculate
-        sectorConcentrationRisk: 0, // Placeholder
-        score: riskAnalysis.overallScore
-      },
+geopoliticalRisk: {
+  foreignRevenue: riskAnalysis.geopoliticalRisk.foreignRevenue || 0,
+  exportDependence: riskAnalysis.geopoliticalRisk.exportDependence || 0,
+  countriesOperatedIn: riskAnalysis.geopoliticalRisk.countriesOperatedIn || [],
+  countryCount: riskAnalysis.geopoliticalRisk.countryCount || 0
+},
+disruptionRisk: {
+  rdIntensity: riskAnalysis.disruptionRisk.rdIntensity || 0,
+  patentCount: riskAnalysis.disruptionRisk.patentCount || 0,
+  averageAgeOfAssets: riskAnalysis.disruptionRisk.averageAgeOfAssets || 0,
+  businessModelAge: riskAnalysis.disruptionRisk.businessModelAge || 0
+},
+maxDrawdown: 0, // Placeholder - would need historical data to calculate
+sectorConcentrationRisk: 0, // Placeholder
+score: riskAnalysis.overallScore
+},
 
-      overall: {
-        fundamentalScore: fundamentalAnalysis.overallScore,
-        technicalScore: technicalAnalysis.overallScore,
-        convictionScore: mutualFundAnalysis.score,
-        growthScore: growthAnalysis.overallScore,
-        riskScore: riskAnalysis.overallScore,
-        weightedScore: recommendation.score,
-        recommendation
-      },
+overall: {
+  fundamentalScore: fundamentalAnalysis.overallScore,
+  technicalScore: technicalAnalysis.overallScore,
+  convictionScore: mutualFundAnalysis.score,
+  growthScore: growthAnalysis.overallScore,
+  riskScore: riskAnalysis.overallScore,
+  weightedScore: recommendation.score,
+  recommendation
+},
 
-      dataSources: ['SIMULATED_DATA'],
-      analyzedAt: new Date()
-    };
+dataSources: ['SIMULATED_DATA'],
+analyzedAt: new Date()
+};
 
-    await analysis.save();
+await analysis.save();
 
-    res.json({
-      ...stock.toObject(),
-      analysis: responseAnalysis,
-      cached: false
-    });
-  } catch (error) {
-    console.error('Error analyzing stock:', error);
-    res.status(500).json({
-      message: 'Error analyzing stock',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
+res.json({
+  ...stock.toObject(),
+  analysis: responseAnalysis,
+  cached: false
+});
+} catch (error) {
+console.error('Error analyzing stock:', error);
+res.status(500).json({
+  message: 'Error analyzing stock',
+  error: process.env.NODE_ENV === 'development' ? error.message : undefined
+});
+}
 });
 
 // Get analysis history for a stock
@@ -348,6 +344,43 @@ async function _generateMockStockData(stock) {
   // Add some variance based on our seed
   const variance = (pseudoRandom(0, 100) - 50) / 100; // -0.5 to 0.5
 
+  // Generate historical price data (last 200 days for technical analysis)
+  const priceDataArray = [];
+  let basePrice = 100 + pseudoRandom(0, 900);
+
+  // Generate approximately 200 days of historical data
+  for (let i = 0; i < 200; i++) {
+    const dayOffset = 200 - i; // Most recent day is last in array
+    const dailyVolatility = 0.02; // 2% daily volatility
+
+    // Generate OHLCV data with some random walk
+    const change = (pseudoRandom(0, 100) - 50) / 100 * dailyVolatility;
+    basePrice *= (1 + change);
+
+    const open = basePrice * (1 + ((pseudoRandom(0, 100) - 50) / 100) * 0.01);
+    const high = Math.max(open, basePrice) * (1 + Math.abs(pseudoRandom(0, 100) - 50) / 100 * 0.02);
+    const low = Math.min(open, basePrice) * (1 - Math.abs(pseudoRandom(0, 100) - 50) / 100 * 0.02);
+    const close = basePrice;
+    const volume = 100000 + pseudoRandom(0, 900000);
+
+    priceDataArray.push({
+      open,
+      high,
+      low,
+      close,
+      volume,
+      // For simplicity, we'll use the same date format for all
+      date: new Date(Date.now() - (dayOffset * 24 * 60 * 60 * 1000)).toISOString().split('T')[0]
+    });
+
+    // Update basePrice for next iteration (slight mean reversion)
+    basePrice = close * (1 + (pseudoRandom(0, 100) - 50) / 100 * 0.005);
+  }
+
+  // Current day's data (most recent)
+  const currentData = priceDataArray[priceDataArray.length - 1];
+  const previousClose = priceDataArray[priceDataArray.length - 2]?.close || currentData.close;
+
   return {
     symbol: stock.symbol,
     name: stock.name,
@@ -355,64 +388,66 @@ async function _generateMockStockData(stock) {
     marketCap: 'large_cap',
     marketCapValue: 50000 + (pseudoRandom(0, 50000)), // 50,000-100,000 Cr
     priceData: {
-      current: 100 + pseudoRandom(0, 900),
-      change: ((pseudoRandom(0, 20) - 10) / 10),
-      changePercent: ((pseudoRandom(0, 20) - 10) / 10),
-      previousClose: 100 + pseudoRandom(0, 900),
-      open: 100 + pseudoRandom(0, 900),
-      dayHigh: 100 + pseudoRandom(0, 950),
-      dayLow: 100 + pseudoRandom(0, 900),
-      volume: 100000 + pseudoRandom(0, 900000),
+      current: currentData.close,
+      change: ((currentData.close - previousClose) / previousClose) * 100,
+      changePercent: ((currentData.close - previousClose) / previousClose) * 100,
+      previousClose: previousClose,
+      open: currentData.open,
+      dayHigh: currentData.high,
+      dayLow: currentData.low,
+      volume: currentData.volume,
       avgVolume: 150000 + pseudoRandom(0, 850000),
       peRatio: sectorBase.pe + variance * 5,
       pbRatio: sectorBase.pb + variance * 2,
       dividendYield: Math.max(0, 1 + ((pseudoRandom(0, 10) - 5) / 100)),
-    },
-    debtToEquity: Math.max(0, sectorBase.debt + variance * 0.3),
-    roe: Math.max(0, sectorBase.roe + variance * 5),
-    roa: Math.max(0, (sectorBase.roe * 0.6) + variance * 3),
-    profitMargin: Math.max(0, (sectorBase.roe * 0.5) + variance * 4),
-    currentRatio: Math.max(0.5, 1.5 + variance),
-    bookValue: (100 + pseudoRandom(0, 900)) / (sectorBase.pb + variance * 2),
-    revenue: 1000 + pseudoRandom(0, 9000),
-    revenueGrowth: {
-      qoq: ((pseudoRandom(0, 20) - 10) / 2),
-      yoy: Math.max(-5, sectorBase.growth + variance * 3)
-    },
-    profitGrowth: {
-      qoq: ((pseudoRandom(0, 20) - 10) / 3),
-      yoy: Math.max(-5, (sectorBase.growth * 0.8) + variance * 2)
-    },
-    epsGrowth: {
-      qoq: ((pseudoRandom(0, 20) - 10) / 2),
-      yoy: Math.max(-5, (sectorBase.growth * 0.9) + variance * 2.5)
-    },
-    bookValueGrowth: {
-      qoq: ((pseudoRandom(0, 15) - 7.5) / 2),
-      yoy: Math.max(-3, (sectorBase.growth * 0.6) + variance * 2)
-    },
-    dividendGrowth: {
-      qoq: ((pseudoRandom(0, 10) - 5) / 2),
-      yoy: Math.max(-2, (sectorBase.growth * 0.3) + variance * 1.5)
-    },
-    eps: (100 + pseudoRandom(0, 900)) / (sectorBase.pe + variance * 5),
-    beta: 0.8 + (pseudoRandom(0, 40) / 100), // 0.8 to 1.2
-    volatility: 15 + (pseudoRandom(0, 30)), // 15-45%
-    correlationToMarket: 0.5 + (pseudoRandom(0, 50) / 100), // 0.5-1.0
-    interestCoverage: 3 + (pseudoRandom(0, 15)), // 3-18x
-    // For risk analysis
-    rdIntensity: Math.max(0, 2 + (pseudoRandom(0, 10) / 10)), // 2-12% R&D intensity
-    patentCount: Math.floor(pseudoRandom(0, 1000)), // 0-1000 patents
-    averageAgeOfAssets: 5 + (pseudoRandom(0, 15)), // 5-20 years
-    businessModelAge: 10 + (pseudoRandom(0, 20)), // 10-30 years
-    foreignRevenue: Math.max(0, 20 + (pseudoRandom(0, 60))), // 20-80% foreign revenue
-    // Management guidance (for growth projections)
-    managementGuidance: {
-      epsGrowthNextYear: Math.max(-5, (sectorBase.growth * 0.8) + (pseudoRandom(0, 20) - 10)),
-      revenueGrowthNextYear: Math.max(-5, sectorBase.growth + (pseudoRandom(0, 20) - 10))
-    }
-  };
-}
+  },
+
+  // Price history array for technical analysis
+  priceHistory: priceDataArray,
+  debtToEquity: Math.max(0, sectorBase.debt + variance * 0.3),
+  roe: Math.max(0, sectorBase.roe + variance * 5),
+  roa: Math.max(0, (sectorBase.roe * 0.6) + variance * 3),
+  profitMargin: Math.max(0, (sectorBase.roe * 0.5) + variance * 4),
+  currentRatio: Math.max(0.5, 1.5 + variance),
+  bookValue: (currentData.close) / (sectorBase.pb + variance * 2),
+  revenue: 1000 + pseudoRandom(0, 9000),
+  revenueGrowth: {
+    qoq: ((pseudoRandom(0, 20) - 10) / 2),
+    yoy: Math.max(-5, sectorBase.growth + variance * 3)
+  },
+  profitGrowth: {
+    qoq: ((pseudoRandom(0, 20) - 10) / 3),
+    yoy: Math.max(-5, (sectorBase.growth * 0.8) + variance * 2)
+  },
+  epsGrowth: {
+    qoq: ((pseudoRandom(0, 20) - 10) / 2),
+    yoy: Math.max(-5, (sectorBase.growth * 0.9) + variance * 2.5)
+  },
+  bookValueGrowth: {
+    qoq: ((pseudoRandom(0, 15) - 7.5) / 2),
+    yoy: Math.max(-3, (sectorBase.growth * 0.6) + variance * 2)
+  },
+  dividendGrowth: {
+    qoq: ((pseudoRandom(0, 10) - 5) / 2),
+    yoy: Math.max(-2, (sectorBase.growth * 0.3) + variance * 1.5)
+  },
+  eps: (currentData.close) / (sectorBase.pe + variance * 5),
+  beta: 0.8 + (pseudoRandom(0, 40) / 100), // 0.8 to 1.2
+  volatility: 15 + (pseudoRandom(0, 30)), // 15-45%
+  correlationToMarket: 0.5 + (pseudoRandom(0, 50) / 100), // 0.5-1.0
+  interestCoverage: 3 + (pseudoRandom(0, 15)), // 3-18x
+  // For risk analysis
+  rdIntensity: Math.max(0, 2 + (pseudoRandom(0, 10) / 10)), // 2-12% R&D intensity
+  patentCount: Math.floor(pseudoRandom(0, 1000)), // 0-1000 patents
+  averageAgeOfAssets: 5 + (pseudoRandom(0, 15)), // 5-20 years
+  businessModelAge: 10 + (pseudoRandom(0, 20)), // 10-30 years
+  foreignRevenue: Math.max(0, 20 + (pseudoRandom(0, 60))), // 20-80% foreign revenue
+  // Management guidance (for growth projections)
+  managementGuidance: {
+    epsGrowthNextYear: Math.max(-5, (sectorBase.growth * 0.8) + (pseudoRandom(0, 20) - 10)),
+    revenueGrowthNextYear: Math.max(-5, sectorBase.growth + (pseudoRandom(0, 20) - 10))
+  }
+};
 
 /**
  * Calculate investment recommendation based on all analyses
