@@ -448,6 +448,7 @@ async function _generateMockStockData(stock) {
     revenueGrowthNextYear: Math.max(-5, sectorBase.growth + (pseudoRandom(0, 20) - 10))
   }
 };
+}
 
 /**
  * Calculate investment recommendation based on all analyses
