@@ -11,7 +11,7 @@ const TechnicalAnalysis = ({ data }) => {
     supportResistance = { support: [], resistance: [] },
     volumeAnalysis = { trend: 'NEUTRAL', averageVolume: 0 },
     momentum = { roc10: 0, roc20: 0, signal: 'NEUTRAL' },
-    trends = {},
+
     overallScore = 50
   } = data;
 
