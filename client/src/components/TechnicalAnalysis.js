@@ -3,7 +3,17 @@ import React from 'react';
 const TechnicalAnalysis = ({ data }) => {
   if (!data) return <div>No technical data available</div>;
 
-  const { movingAverages, rsi, macd, bollingerBands, supportResistance, volumeAnalysis, momentum, trends, overallScore } = data;
+  const {
+    movingAverages = {},
+    rsi = { value: 50, signal: 'NEUTRAL' },
+    macd = { macd: 0, signal: 0, histogram: 0 },
+    bollingerBands = { upper: 0, middle: 0, lower: 0, signal: 'NEUTRAL' },
+    supportResistance = { support: [], resistance: [] },
+    volumeAnalysis = { trend: 'NEUTRAL', averageVolume: 0 },
+    momentum = { roc10: 0, roc20: 0, signal: 'NEUTRAL' },
+    trends = {},
+    overallScore = 50
+  } = data;
 
   return (
     <div className="analysis-panel">
@@ -14,8 +24,8 @@ const TechnicalAnalysis = ({ data }) => {
           <h4>Trend Indicators</h4>
           <div className="metric">
             <span>Price vs MA20:</span>
-            <span className={movingAverages.currentPrice > movingAverages.sma20 ? 'positive' : 'negative'}>
-              {((movingAverages.currentPrice / movingAverages.sma20 - 1) * 100).toFixed(2)}%
+            <span className={(movingAverages.currentPrice ?? 0) > (movingAverages.sma20 ?? 0) ? 'positive' : 'negative'}>
+              {((movingAverages.currentPrice ?? 0) && (movingAverages.sma20 ?? 0) ? ((movingAverages.currentPrice / movingAverages.sma20 - 1) * 100).toFixed(2) : 'N/A')}%
             </span>
           </div>
           <div className="metric">
@@ -50,8 +60,8 @@ const TechnicalAnalysis = ({ data }) => {
           </div>
           <div className="metric">
             <span>MACD:</span>
-            <span className={macd.histogram > 0 ? 'positive' : macd.histogram < 0 ? 'negative' : 'neutral'}>
-              MACD: {macd.macd?.toFixed(3)}, Signal: {macd.signal?.toFixed(3)}
+            <span className={(macd.histogram ?? 0) > 0 ? 'positive' : (macd.histogram ?? 0) < 0 ? 'negative' : 'neutral'}>
+              MACD: {(macd.macd ?? 0).toFixed(3)}, Signal: {(macd.signal ?? 0).toFixed(3)}
             </span>
           </div>
         </div>

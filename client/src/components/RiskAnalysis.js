@@ -3,7 +3,17 @@ import React from 'react';
 const RiskAnalysis = ({ data }) => {
   if (!data) return <div>No risk data available</div>;
 
-  const { marketRisk, creditRisk, liquidityRisk, operationalRisk, sectorRisk, geopoliticalRisk, disruptionRisk, overallScore, riskCategory } = data;
+  const {
+    marketRisk = { beta: 1, volatility: 25, correlationToMarket: 0.7 },
+    creditRisk = { debtToEquity: 0, interestCoverage: 0, currentRatio: 1 },
+    liquidityRisk = { averageVolume: 0, bidAskSpread: 0.5 },
+    operationalRisk = { roe: 0, roa: 0, operatingMargin: 0 },
+    sectorRisk = {},
+    geopoliticalRisk = { foreignRevenue: 0, countryCount: 0 },
+    disruptionRisk = { rdIntensity: 0, patentCount: 0, averageAgeOfAssets: 0 },
+    overallScore = 50,
+    riskCategory = 'UNKNOWN'
+  } = data;
 
   return (
     <div className="analysis-panel">
@@ -96,7 +106,7 @@ const RiskAnalysis = ({ data }) => {
           <h4>Sector Risk</h4>
           <div className="margin">
             <span>Sector:</span>
-            <span>{sectorRisk.sector}</span>
+            <span>{sectorRisk.sector ?? 'N/A'}</span>
           </div>
           <div className="metric">
             <span>Market Share:</span>
