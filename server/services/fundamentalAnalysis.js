@@ -143,7 +143,7 @@ class FundamentalAnalysisService {
         // Within target range
         const midPoint = (minPEG + maxPEG) / 2;
         const distanceFromMid = Math.abs(pegRatio - midPoint);
-        const maxDistance = Math.max(midPoint - minPEG, maxPEG - midPEG);
+        const maxDistance = Math.max(midPoint - minPEG, maxPEG - midPoint);
         score = 50 + (50 * (1 - distanceFromMid / maxDistance));
         interpretation = 'Reasonable growth valuation';
       }
@@ -396,8 +396,8 @@ class FundamentalAnalysisService {
   _calculateGrowthScore(stockData) {
     // In a complete implementation, this would pull from growth analysis
     // For now, use available growth data or default
-    const revenueGrowth = stockData.revenueGrowth?.yoj || 0;
-    const profitGrowth = stockData.profitGrowth?.yoj || 0;
+    const revenueGrowth = stockData.revenueGrowth?.yoy || 0;
+    const profitGrowth = stockData.profitGrowth?.yoy || 0;
 
     let growthScore = 50; // Default
 
