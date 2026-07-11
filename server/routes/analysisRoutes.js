@@ -15,19 +15,23 @@ router.post('/:symbol', async (req, res) => {
     const { exchange = 'NSE', depth = 'standard' } = req.body;
     const forceRefresh = req.body.forceRefresh || false;
 
-    // Find or create stock
-    let stock = await Stock.findOne({
-      symbol: symbol.toUpperCase(),
+    // Find stock
+    const symbolUpper = symbol.toUpperCase();
+    const stock = await Stock.findOne({
+      symbol: symbolUpper,
       exchange
     });
 
+    // If stock does not exist in DB, return error instead of generating mock values
     if (!stock) {
-      stock = await Stock.create({
-        symbol: symbol.toUpperCase(),
+      return res.status(404).json({
+        message: 'Stock not found',
+        symbol: symbolUpper,
         exchange,
-        name: `${symbol} Limited` // Placeholder - would fetch from API in real app
+        error: 'SYMBOL_NOT_FOUND'
       });
     }
+
 
     // Check if we have recent analysis (unless forcing refresh)
     if (!forceRefresh) {
