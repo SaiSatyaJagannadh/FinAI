@@ -178,7 +178,8 @@ def fetch_stock_data(symbol, exchange='NSE', period='1y'):
         'operatingMargin': info.get('operatingMargins') * 100 if info.get('operatingMargins') else 0,
 
         # Debt & liquidity
-        'debtToEquity': info.get('debtToEquity') or 0,
+        # yfinance reports debtToEquity as a percentage (e.g. 9.8 == 0.098 ratio)
+        'debtToEquity': (info.get('debtToEquity') or 0) / 100,
         'currentRatio': info.get('currentRatio') or 0,
         'quickRatio': info.get('quickRatio') or 0,
 

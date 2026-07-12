@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(kill 80554 *)",
-      "Bash(npm start *)"
+      "Bash(npm start *)",
+      "Bash(.venv/bin/python3 services/stockDataService.py INFY --json)",
+      "Bash(.venv/bin/python3 services/screenerService.py INFY --json)",
+      "Bash(.venv/bin/pip show *)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(node -e ' *)"
     ]
   }
 }

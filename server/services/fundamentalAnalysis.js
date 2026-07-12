@@ -78,8 +78,8 @@ class FundamentalAnalysisService {
    * Analyze P/E ratio (Trailing and Forward)
    */
   _analyzePERatio(stockData) {
-    const trailingPE = stockData.priceData?.peRatio || 0;
-    const forwardPE = stockData.forwardPE || trailingPE * 0.9; // Estimate if not provided
+    const trailingPE = stockData.fundamental?.peRatio || 0;
+    const forwardPE = stockData.fundamental?.forwardPE || trailingPE * 0.9; // Estimate if not provided
 
     const sector = stockData.sector || 'default';
     const benchmarks = this.sectorBenchmarks[sector] || this.sectorBenchmarks.default;
@@ -117,9 +117,9 @@ class FundamentalAnalysisService {
    * Analyze PEG ratio (P/E to Growth)
    */
   _analyzePEGRatio(stockData) {
-    const peRatio = stockData.priceData?.peRatio || 0;
+    const peRatio = stockData.fundamental?.peRatio || 0;
     const growthRate = stockData.growthRate ||
-                     (stockData.earningsGrowth?.yoy || 0) ||
+                     (stockData.epsGrowth?.yoy || 0) ||
                      (stockData.revenueGrowth?.yoy || 0) ||
                      10; // Default growth assumption
 
@@ -164,7 +164,7 @@ class FundamentalAnalysisService {
    * Analyze Price to Book ratio
    */
   _analyzePriceToBook(stockData) {
-    const pbRatio = stockData.priceData?.pbRatio || 0;
+    const pbRatio = stockData.fundamental?.pbRatio || 0;
 
     let score = 50;
     let interpretation = 'Moderate P/B ratio';

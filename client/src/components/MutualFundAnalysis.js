@@ -52,14 +52,17 @@ const MutualFundAnalysis = ({ data }) => {
           <h4>Top Holder Funds</h4>
           {topHolders.length > 0 ? (
             <ul className="holder-list">
-              {topHolders.map((holder, index) => (
-                <li key={index} className={`holder-item ${holder.change > 0 ? 'positive' : holder.change < 0 ? 'negative' : 'neutral'}`}>
-                  <strong>{holder.fundName}</strong>: {holder.holdingPercentage}%
-                  (Rank: #{holder.rank || 'N/A'})
-                  {holder.change !== 0 ?
-                    ` (${holder.change > 0 ? '+' : ''}${holder.change.toFixed(2)}% QoQ)` : ''}
-                </li>
-              ))}
+              {topHolders.map((holder, index) => {
+                const change = holder.changeLastQuarter ?? holder.change ?? 0;
+                return (
+                  <li key={index} className={`holder-item ${change > 0 ? 'positive' : change < 0 ? 'negative' : 'neutral'}`}>
+                    <strong>{holder.fundName}</strong>: {holder.holdingPercentage}%
+                    (Rank: #{holder.rank || 'N/A'})
+                    {change !== 0 ?
+                      ` (${change > 0 ? '+' : ''}${change.toFixed(2)}% QoQ)` : ''}
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p>No major mutual funds currently holding this stock</p>

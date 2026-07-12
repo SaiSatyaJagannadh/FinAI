@@ -15,3 +15,5 @@ build/
 *.log
 # Misc
 .env.example
+
+sector_map*

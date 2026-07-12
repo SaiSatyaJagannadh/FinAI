@@ -51,7 +51,7 @@ import argparse
 
 try:
     import requests
-    from bs4 import BeautifulSoup, Comment
+    from bs4 import BeautifulSoup
     REQUESTS_AVAILABLE = True
 except ImportError:
     REQUESTS_AVAILABLE = False
@@ -102,28 +102,10 @@ def _parse_num(s):
     return -v if neg else v
 
 
-def _scalar_top(top_html, labels):
-    """Find the first of *labels* in the top-of-page HTML and return the next
-    number that follows it (within a short gap, to avoid matching an
-    unrelated number far away). Returns None if not found."""
-    for label in labels:
-        # Allow a few tags/whitespace between the label text and the number,
-        # but cap the gap so we don't bleed into the next metric.
-        pat = re.escape(label) + r"[^0-9\-—(]{0,80}?(-?\(?\d[\d,]*\.?\d*[\)]?)"
-        m = re.search(pat, top_html, re.IGNORECASE | re.DOTALL)
-        if m:
-            return _parse_num(m.group(1))
-    return None
-
-
-def _table_after_comment(soup, marker):
-    """Screener prefixes each section table with an HTML comment such as
-    `<!-- FINANCIALS -->`. Return the first <table> that follows that comment."""
-    for node in soup.find_all(string=lambda t: isinstance(t, Comment) and marker in t):
-        tbl = node.find_next("table")
-        if tbl is not None:
-            return tbl
-    return None
+def _section_table(soup, section_id):
+    """Return the first data <table> inside `<section id="...">`."""
+    sec = soup.find("section", id=section_id)
+    return sec.find("table") if sec else None
 
 
 def _table_rows(tbl):
@@ -186,35 +168,55 @@ def fetch_company(symbol):
     if h1:
         name = h1.get_text(strip=True)
 
-    # --- Top scalar metrics (only look before the FINANCIALS comment) ---
-    head = html.split("<!-- FINANCIALS -->", 1)[0]
-    pe = _scalar_top(head, ["Stock P/E", "Stock P/E"])
-    pb = _scalar_top(head, ["Price to Book", "P/B Ratio", "Price/BV", "Price to Book Value"])
-    div_yield = _scalar_top(head, ["Dividend Yield"])
-    book_value = _scalar_top(head, ["Book Value"])
+    # --- Top scalar metrics (`#top-ratios` list of .name/.value pairs) ---
+    top = {}
+    top_ul = soup.find(id="top-ratios")
+    if top_ul:
+        for li in top_ul.find_all("li"):
+            label = li.find(class_="name")
+            value = li.find(class_="value") or li.find(class_="number")
+            if label and value:
+                top[label.get_text(" ", strip=True)] = _parse_num(value.get_text(" ", strip=True))
+    pe = top.get("Stock P/E")
+    book_value = top.get("Book Value")
+    div_yield = top.get("Dividend Yield")
+    roe = top.get("ROE")
+    current_price = top.get("Current Price")
+    pb = (current_price / book_value) if current_price and book_value else None
 
-    # --- Annual financials table (Net Sales / Net Profit / EPS) ---
-    fin_rows = _table_rows(_table_after_comment(soup, "FINANCIALS"))
-    sales = _row_label_contains(fin_rows, "net sales")
+    # --- Annual P&L table (Sales / Net Profit / EPS series) ---
+    fin_rows = _table_rows(_section_table(soup, "profit-loss"))
+    sales = _row_label_contains(fin_rows, "sales")
     profit = _row_label_contains(fin_rows, "net profit")
     eps = _row_label_contains(fin_rows, "eps")
+    opm_series = _row_label_contains(fin_rows, "opm")
 
     revenue_yoy = _yoy_last_two(sales) if sales else 0.0
     profit_yoy = _yoy_last_two(profit) if profit else 0.0
     eps_yoy = _yoy_last_two(eps) if eps else 0.0
+    opm = opm_series[-1] if opm_series else None
+    net_margin = None
+    if sales and profit and sales[-1]:
+        net_margin = round(profit[-1] / sales[-1] * 100.0, 2)
 
-    # --- Financial ratios table ---
-    ratio_rows = _table_rows(_table_after_comment(soup, "FINANCIAL RATIOS"))
-    roe = _first_ratio(ratio_rows, ["ROE %", "Return on Equity"])
-    roa = _first_ratio(ratio_rows, ["ROA %", "Return on Assets"])
-    roce = _first_ratio(ratio_rows, ["ROCE %", "Return on Capital Employed"])
-    debt_to_equity = _first_ratio(ratio_rows, ["Debt to Equity"])
-    current_ratio = _first_ratio(ratio_rows, ["Current Ratio"])
-    net_margin = _first_ratio(ratio_rows, ["Net Profit Margin %", "Net Profit Margin"])
-    opm = _first_ratio(ratio_rows, ["OPM %", "Operating Profit Margin %"])
+    # --- Debt/Equity from the balance sheet (Borrowings / (Equity+Reserves)) ---
+    bs_rows = _table_rows(_section_table(soup, "balance-sheet"))
+    borrowings = _row_label_contains(bs_rows, "borrowings")
+    equity_cap = _row_label_contains(bs_rows, "equity capital")
+    reserves = _row_label_contains(bs_rows, "reserves")
+    debt_to_equity = None
+    if borrowings and equity_cap and reserves:
+        eq = (equity_cap[-1] or 0) + (reserves[-1] or 0)
+        if eq > 0:
+            debt_to_equity = round((borrowings[-1] or 0) / eq, 3)
+
+    # Not published on the Screener company page; 0 keeps yfinance's values
+    # (the Node merge only overwrites truthy fields).
+    roa = None
+    current_ratio = None
 
     # --- Shareholding pattern table (quarterly) ---
-    sh_rows = _table_rows(_table_after_comment(soup, "SHAREHOLDING PATTERN"))
+    sh_rows = _table_rows(_section_table(soup, "shareholding"))
     shareholding = _build_shareholding(sh_rows)
 
     result = {
@@ -224,8 +226,9 @@ def fetch_company(symbol):
         "sector": None,  # Screener sector optional; Node merge keeps yfinance's if None
         "fundamental": {
             "peRatio": _nz(pe),
-            "pbRatio": _nz(pb),
-            "dividendYield": _nz(div_yield) / 100.0 if div_yield else 0,
+            "pbRatio": round(pb, 2) if pb else 0,
+            # Percent form (5.15 == 5.15%), matching yfinance's dividendYield
+            "dividendYield": _nz(div_yield),
             "eps": _nz(eps[-1]) if eps else 0,
             "bookValue": _nz(book_value),
         },
@@ -245,18 +248,6 @@ def fetch_company(symbol):
     return result
 
 
-def _first_ratio(ratio_rows, labels):
-    """Find a ratio row by any of *labels* and return its most recent value."""
-    for label in labels:
-        vals = _row_label_contains(ratio_rows, label)
-        if vals:
-            # last non-None
-            for v in reversed(vals):
-                if v is not None:
-                    return v
-    return None
-
-
 def _nz(v):
     return v if v is not None else 0
 
@@ -264,12 +255,14 @@ def _nz(v):
 def _build_shareholding(sh_rows):
     """From the quarterly shareholding table, extract latest quarter percentages
     and QoQ deltas for promoter / FII / DII / MF / others."""
+    # Row labels on the page look like "Promoters +", "FIIs +", "DIIs +",
+    # "Public +". Mutual funds have no separate row (they sit inside DIIs).
     cats = {
         "promoter": ["promoter"],
-        "fii": ["fii", "foreign", "foreign institutions"],
-        "dii": ["dii", "domestic institutions", "domestic"],
-        "mf": ["mutual funds", "mutual fund", "mf"],
-        "others": ["others", "other"],
+        "fii": ["fii", "foreign institutions"],
+        "dii": ["dii", "domestic institutions"],
+        "mf": ["mutual funds", "mutual fund"],
+        "others": ["public", "others", "other"],
     }
     percentages = {}
     qoq = {}

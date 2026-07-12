@@ -197,7 +197,7 @@ router.post('/:symbol', async (req, res) => {
       mutualFund: mutualFundAnalysis,
       growth: growthAnalysis,
       risk: riskAnalysis
-    });
+    }, stockData.priceData?.current || 0);
 
     // Calculate EMA20 and EMA50 for moving averages
     const priceData = stockData.priceHistory || [];
@@ -579,7 +579,7 @@ async function _generateMockStockData(stock) {
 /**
  * Calculate investment recommendation based on all analyses
  */
-function _calculateRecommendation(analyses) {
+function _calculateRecommendation(analyses, currentPrice = 0) {
   const {
     fundamental,
     technical,
@@ -637,7 +637,7 @@ function _calculateRecommendation(analyses) {
   }
 
   // Calculate target price (simplified)
-  const currentPrice = 1000; // Would come from actual data
+  if (!currentPrice) currentPrice = 1000; // Fallback for mock data path
   let targetPrice = currentPrice;
   let stopLoss = currentPrice * 0.9; // 10% stop loss as default
 
