@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
+const path = require('path');
 
 // Load environment variables
 dotenv.config();
@@ -41,8 +42,15 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Handle 404
+// Serve React build (single-service deployment); API 404s stay JSON
+const clientBuild = path.join(__dirname, '../client/build');
+app.use(express.static(clientBuild));
 app.use('*', (req, res) => {
+  if (!req.originalUrl.startsWith('/api')) {
+    return res.sendFile(path.join(clientBuild, 'index.html'), (err) => {
+      if (err) res.status(404).json({ message: 'Route not found' });
+    });
+  }
   res.status(404).json({ message: 'Route not found' });
 });
 

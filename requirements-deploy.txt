@@ -1,0 +1,5 @@
+# Minimal runtime deps for deployment (full dev list in requirements.txt)
+yfinance>=0.2.40
+requests>=2.32.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0

@@ -11,11 +11,11 @@ const MutualFundAnalysisService = require('../services/mutualFundAnalysis');
 const GrowthAnalysisService = require('../services/growthAnalysis');
 const RiskAnalysisService = require('../services/riskAnalysis');
 
-// Absolute paths for Python stock data service
-const PROJECT_ROOT = '/Users/saijagannadh/Desktop/AI_Agents/FinAI';
+// Paths for Python stock data service — derived from repo layout, overridable for deployment
+const PROJECT_ROOT = process.env.PROJECT_ROOT || path.join(__dirname, '..', '..');
 const STOCK_DATA_SERVICE = path.join(PROJECT_ROOT, 'services/stockDataService.py');
 const SCREENER_SERVICE = path.join(PROJECT_ROOT, 'services/screenerService.py');
-const PYTHON_BIN = path.join(PROJECT_ROOT, '.venv/bin/python3');
+const PYTHON_BIN = process.env.PYTHON_BIN || path.join(PROJECT_ROOT, '.venv/bin/python3');
 
 /**
  * Fetch real stock data from yfinance service

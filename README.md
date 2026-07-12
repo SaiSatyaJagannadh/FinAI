@@ -78,6 +78,25 @@ npm run dev
 
 This will start both the backend (port 5000) and frontend (port 3000) servers.
 
+## Deployment (Render)
+
+The app deploys as a single Docker service (Node + Python, Express serves the React build).
+
+1. Push this repo to GitHub.
+2. In [MongoDB Atlas](https://cloud.mongodb.com) → Network Access → add `0.0.0.0/0` (allow from anywhere) so Render can connect.
+3. On [Render](https://render.com): **New → Blueprint**, pick this repo — it reads `render.yaml`.
+4. When prompted, set the `MONGODB_URI` environment variable (same value as in `server/.env`).
+5. Deploy. The app is live at `https://<service-name>.onrender.com`.
+
+Test locally with Docker:
+```bash
+docker build -t finai .
+docker run -p 5000:5000 -e MONGODB_URI="<your atlas uri>" finai
+# open http://localhost:5000
+```
+
+Note: the free tier sleeps after 15 min idle; first request after sleep takes ~1 min.
+
 ## API Endpoints
 
 ### Stock Analysis
