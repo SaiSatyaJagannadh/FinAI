@@ -83,6 +83,84 @@ const MutualFundAnalysisService = {
   },
 
   /**
+   * Build real MF / institutional conviction from Screener shareholding data.
+   * @param {Object} sh - { percentages:{promoter,fii,dii,mf,others}, qoqChanges:{...} }
+   * Returns the same shape the frontend Mutual Fund tab reads.
+   */
+  buildFromShareholding: function(sh) {
+    try {
+      if (!sh || !sh.percentages) return this._getDefaultConvictionAnalysis();
+
+      const p = sh.percentages || {};
+      const q = sh.qoqChanges || {};
+      const mf = p.mf || 0, fii = p.fii || 0, dii = p.dii || 0;
+      const promoter = p.promoter || 0, others = p.others || 0;
+      const mfQ = q.mf || 0, fiiQ = q.fii || 0, diiQ = q.dii || 0;
+      const instTotal = mf + fii + dii;
+      const instQoQ = mfQ + fiiQ + diiQ;
+
+      if (!(mf || fii || dii || promoter || others)) {
+        return this._getDefaultConvictionAnalysis();
+      }
+
+      const rawHolders = [
+        { fundName: 'Mutual Funds', holdingPercentage: mf, changeLastQuarter: mfQ },
+        { fundName: 'FIIs / Foreign Institutions', holdingPercentage: fii, changeLastQuarter: fiiQ },
+        { fundName: 'DIIs / Domestic Institutions', holdingPercentage: dii, changeLastQuarter: diiQ },
+        { fundName: 'Promoters', holdingPercentage: promoter, changeLastQuarter: q.promoter || 0 },
+        { fundName: 'Others (retail etc.)', holdingPercentage: others, changeLastQuarter: q.others || 0 }
+      ];
+      const topHolders = rawHolders
+        .filter(h => h.holdingPercentage || h.changeLastQuarter)
+        .sort((a, b) => (b.holdingPercentage || 0) - (a.holdingPercentage || 0))
+        .map((h, i) => ({ ...h, rank: i + 1 }));
+
+      // Sentiment from MF + FII QoQ trend (smart money).
+      const smartQoQ = mfQ + fiiQ;
+      let sentiment = 'NEUTRAL';
+      if (smartQoQ > 0.1) sentiment = 'BULLISH';
+      else if (smartQoQ < -0.1) sentiment = 'BEARISH';
+
+      // Holding percentile from total institutional holding.
+      let holdingPercentile = 20;
+      if (instTotal >= 50) holdingPercentile = 95;
+      else if (instTotal >= 35) holdingPercentile = 85;
+      else if (instTotal >= 25) holdingPercentile = 70;
+      else if (instTotal >= 15) holdingPercentile = 55;
+      else if (instTotal >= 8) holdingPercentile = 40;
+
+      // Score: institutional level + QoQ trend + promoter backing bonus.
+      const levelScore = Math.min(60, instTotal * 0.6);
+      const promoterBonus = promoter >= 50 ? 6 : 0;
+      const trendScore = Math.max(-20, Math.min(25, instQoQ * 4));
+      const score = Math.max(5, Math.min(95, Math.round(20 + levelScore + trendScore + promoterBonus)));
+
+      const institutionalHolders = topHolders.filter(h =>
+        h.fundName === 'Mutual Funds' ||
+        h.fundName === 'FIIs / Foreign Institutions' ||
+        h.fundName === 'DIIs / Domestic Institutions');
+
+      return {
+        score,
+        holdingPercentile,
+        topHolders,
+        sentiment,
+        totalFundsHolding: institutionalHolders.filter(h => h.holdingPercentage > 0).length,
+        totalFundsAnalyzed: 3,
+        averageHoldingPercentage: institutionalHolders.length > 0
+          ? Math.round(this._calculateAverage(institutionalHolders.map(h => h.holdingPercentage)) * 100) / 100
+          : 0,
+        maxHoldingPercentage: institutionalHolders.length > 0
+          ? Math.max(...institutionalHolders.map(h => h.holdingPercentage))
+          : 0
+      };
+    } catch (e) {
+      console.error('Error building MF from shareholding:', e);
+      return this._getDefaultConvictionAnalysis();
+    }
+  },
+
+  /**
    * Calculate conviction score based on mutual fund holdings
    */
   _calculateConvictionScore: function(holdings, allFunds) {

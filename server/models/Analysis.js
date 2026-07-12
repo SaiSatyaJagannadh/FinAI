@@ -70,7 +70,11 @@ const analysisSchema = new mongoose.Schema({
         changeLastQuarter: Number
       }
     ],
-    sentiment: String // 'Bullish', 'Neutral', 'Bearish'
+    sentiment: String, // 'Bullish', 'Neutral', 'Bearish'
+    totalFundsHolding: Number,
+    totalFundsAnalyzed: Number,
+    averageHoldingPercentage: Number,
+    maxHoldingPercentage: Number
   },
   // Growth Analysis
   growth: {

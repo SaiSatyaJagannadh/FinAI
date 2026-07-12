@@ -10,6 +10,9 @@ import os
 import argparse
 from datetime import datetime, timedelta
 
+# Canonical sector keys must match server/services/fundamentalAnalysis.js benchmarks.
+from sector_map import normalize_sector
+
 try:
     import yfinance as yf
     YFINANCE_AVAILABLE = True
@@ -22,6 +25,7 @@ NSE_SYMBOL_MAP = {
     'RELIANCE': 'RELIANCE.NS',
     'TCS': 'TCS.NS',
     'INFY': 'INFY.NS',
+    'INFOSYS': 'INFY.NS',  # alias: Infosys trades as INFY on NSE
     'HDFCBANK': 'HDFCBANK.NS',
     'ICICIBANK': 'ICICIBANK.NS',
     'HINDUNILVR': 'HINDUNILVR.NS',
@@ -39,7 +43,7 @@ NSE_SYMBOL_MAP = {
     'WIPRO': 'WIPRO.NS',
     'TECHM': 'TECHM.NS',
     'BAJFINANCE': 'BAJFINANCE.NS',
-    'HDFC': 'HDFC.NS',
+    'HDFC': 'HDFCBANK.NS',  # HDFC Ltd merged into HDFC Bank (Jul 2023) & delisted; redirect to live successor
     'AXISBANK': 'AXISBANK.NS',
     'TATAMOTORS': 'TATAMOTORS.NS',
     'ADANIPORTS': 'ADANIPORTS.NS',
@@ -64,23 +68,6 @@ def get_yahoo_symbol(symbol, exchange='NSE'):
         return f"{clean_symbol}.BO"
     else:
         return clean_symbol
-
-def get_yahoo_symbol(symbol, exchange='NSE'):
-    """Convert local symbol to Yahoo Finance format"""
-    # Remove .NS suffix if already present
-    clean_symbol = symbol.replace('.NS', '').replace('.BO', '')
-
-    if exchange.upper() == 'NSE':
-        # Check if we have a mapping
-        if clean_symbol in NSE_SYMBOL_MAP:
-            return NSE_SYMBOL_MAP[clean_symbol]
-        # Default: add .NS for NSE stocks
-        return f"{clean_symbol}.NS"
-    elif exchange.upper() == 'BSE':
-        return f"{clean_symbol}.BO"
-    else:
-        return clean_symbol
-
 
 def fetch_stock_data(symbol, exchange='NSE', period='1y'):
     """
@@ -159,7 +146,7 @@ def fetch_stock_data(symbol, exchange='NSE', period='1y'):
 
         # Basic info
         'name': info.get('longName') or info.get('shortName') or f"{symbol} Limited",
-        'sector': info.get('sector') or 'Unknown',
+        'sector': normalize_sector(info.get('sector')),
         'industry': info.get('industry') or 'Unknown',
 
         # Price data - use historical as fallback

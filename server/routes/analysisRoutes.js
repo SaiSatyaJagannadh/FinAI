@@ -14,6 +14,7 @@ const RiskAnalysisService = require('../services/riskAnalysis');
 // Absolute paths for Python stock data service
 const PROJECT_ROOT = '/Users/saijagannadh/Desktop/AI_Agents/FinAI';
 const STOCK_DATA_SERVICE = path.join(PROJECT_ROOT, 'services/stockDataService.py');
+const SCREENER_SERVICE = path.join(PROJECT_ROOT, 'services/screenerService.py');
 const PYTHON_BIN = path.join(PROJECT_ROOT, '.venv/bin/python3');
 
 /**
@@ -49,6 +50,28 @@ async function fetchRealStockData(symbol, exchange = 'NSE') {
   });
 }
 
+/**
+ * Fetch Indian fundamentals + shareholding from the Screener.in scraper.
+ * Returns null on any failure; callers fall back to yfinance `info.*`.
+ */
+async function fetchScreenerData(symbol) {
+  return new Promise((resolve) => {
+    const cmd = `"${PYTHON_BIN}" "${SCREENER_SERVICE}" "${symbol}" --json`;
+    exec(cmd, { cwd: PROJECT_ROOT }, (error, stdout) => {
+      if (error) {
+        console.error('Screener fetch error:', error.message.split('\n')[0]);
+        return resolve(null);
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch (e) {
+        console.error('Screener parse error:', e.message);
+        resolve(null);
+      }
+    });
+  });
+}
+
 // Comprehensive stock analysis endpoint
 router.post('/:symbol', async (req, res) => {
   try {
@@ -56,23 +79,17 @@ router.post('/:symbol', async (req, res) => {
     const { exchange = 'NSE', depth = 'standard' } = req.body;
     const forceRefresh = req.body.forceRefresh || false;
 
-    // Find stock
+    // Find or create stock — do NOT gate analysis on prior DB presence.
+    // Any symbol the user types should be analyzable (real data fetched below).
     const symbolUpper = symbol.toUpperCase();
-    const stock = await Stock.findOne({
-      symbol: symbolUpper,
-      exchange
-    });
-
-    // If stock does not exist in DB, return error instead of generating mock values
+    const stock = await Stock.findOrCreate(symbolUpper, exchange);
     if (!stock) {
-      return res.status(404).json({
-        message: 'Stock not found',
+      return res.status(500).json({
+        message: 'Could not resolve stock',
         symbol: symbolUpper,
-        exchange,
-        error: 'SYMBOL_NOT_FOUND'
+        exchange
       });
     }
-
 
     // Check if we have recent analysis (unless forcing refresh)
     if (!forceRefresh) {
@@ -94,6 +111,8 @@ router.post('/:symbol', async (req, res) => {
     // Try to fetch REAL data from yfinance
     let stockData = await fetchRealStockData(symbolUpper, exchange);
     let isRealData = false;
+    let usedSources = ['SIMULATED_DATA'];
+    let screenerShareholding = null;
 
     if (!stockData || !stockData.success) {
       console.log(`Could not fetch real data for ${symbolUpper}, using mock data`);
@@ -103,6 +122,27 @@ router.post('/:symbol', async (req, res) => {
       console.log(`Real data fetched for ${symbolUpper}: ₹${stockData.priceData?.current}`);
       stockData.isReal = true;
       isRealData = true;
+      usedSources = ['YAHOO_FINANCE'];
+
+      // --- Enrich with Screener.in (Indian fundamentals + MF/FII/DII shareholding).
+      // Silent fallback to yfinance on any scrape failure. ---
+      const screener = await fetchScreenerData(symbolUpper);
+      if (screener && screener.success) {
+        usedSources.push('SCREENER_IN');
+        if (!stockData.fundamental) stockData.fundamental = {};
+        for (const k of ['peRatio', 'pbRatio', 'dividendYield', 'eps', 'bookValue']) {
+          if (screener.fundamental && screener.fundamental[k]) stockData.fundamental[k] = screener.fundamental[k];
+        }
+        for (const k of ['roe', 'roa', 'profitMargin', 'operatingMargin', 'debtToEquity', 'currentRatio']) {
+          if (screener[k]) stockData[k] = screener[k];
+        }
+        for (const k of ['revenueGrowth', 'profitGrowth', 'epsGrowth', 'bookValueGrowth', 'dividendGrowth']) {
+          if (screener[k] && (screener[k].yoy || screener[k].qoq)) stockData[k] = screener[k];
+        }
+        if (screener.name) stockData.name = screener.name;
+        if (screener.sector) stockData.sector = screener.sector;
+        screenerShareholding = screener.shareholding || null;
+      }
 
       // Update stock record with real data
       await Stock.findByIdAndUpdate(stock._id, {
@@ -111,6 +151,10 @@ router.post('/:symbol', async (req, res) => {
         'basicInfo.sector': stockData.sector || stock.sector,
         'basicInfo.industry': stockData.industry || stock.basicInfo?.industry,
         'priceData.current': stockData.priceData?.current,
+        'priceData.change': (stockData.priceData?.current || 0) - (stockData.priceData?.previousClose || 0),
+        'priceData.changePercent': (stockData.priceData?.previousClose > 0)
+          ? (((stockData.priceData?.current || 0) - stockData.priceData?.previousClose) / stockData.priceData?.previousClose) * 100
+          : 0,
         'priceData.previousClose': stockData.priceData?.previousClose,
         'priceData.open': stockData.priceData?.open,
         'priceData.dayHigh': stockData.priceData?.dayHigh,
@@ -124,6 +168,7 @@ router.post('/:symbol', async (req, res) => {
         'week52.high': stockData.fiftyTwoWeekHigh,
         'week52.low': stockData.fiftyTwoWeekLow,
         marketCapValue: stockData.priceData?.marketCap ? stockData.priceData.marketCap / 1e7 : stock.marketCapValue,
+        priceHistory: (stockData.priceHistory || []).slice(-260),
         lastUpdated: new Date()
       });
     }
@@ -138,7 +183,9 @@ router.post('/:symbol', async (req, res) => {
     ] = await Promise.all([
       FundamentalAnalysisService.analyzeFundamentals(stockData),
       TechnicalAnalysisService.analyzeTechnicals(stockData.priceHistory || []),
-      MutualFundAnalysisService.analyzeConvictionStockSymbol(stock.symbol, []),
+      screenerShareholding
+        ? MutualFundAnalysisService.buildFromShareholding(screenerShareholding)
+        : MutualFundAnalysisService.analyzeConvictionStockSymbol(stock.symbol, []),
       GrowthAnalysisService.analyzeGrowth(stockData),
       RiskAnalysisService.analyzeRisk(stockData)
     ]);
@@ -219,7 +266,7 @@ router.post('/:symbol', async (req, res) => {
         recommendation
       },
 
-      dataSources: [stockData.isReal ? 'YAHOO_FINANCE' : 'SIMULATED_DATA'],
+      dataSources: usedSources,
       analyzedAt: new Date()
     };
 
@@ -318,7 +365,7 @@ overall: {
   recommendation
 },
 
-dataSources: [stockData.isReal ? 'YAHOO_FINANCE' : 'SIMULATED_DATA'],
+dataSources: usedSources,
 analyzedAt: new Date()
 };
 
@@ -326,6 +373,7 @@ await analysis.save();
 
 res.json({
   ...stock.toObject(),
+  priceHistory: stockData.priceHistory || [],
   analysis: responseAnalysis,
   cached: false
 });

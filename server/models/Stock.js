@@ -61,6 +61,15 @@ const stockSchema = new mongoose.Schema({
     high: Number,
     low: Number
   },
+  // Daily price history for charting (~most recent 250 trading days)
+  priceHistory: [{
+    date: String,
+    open: Number,
+    high: Number,
+    low: Number,
+    close: Number,
+    volume: Number
+  }],
   // Metadata
   isActive: {
     type: Boolean,

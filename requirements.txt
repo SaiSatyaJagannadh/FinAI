@@ -10,6 +10,11 @@ requests>=2.32.0
 aiohttp>=3.9.0
 yfinance>=0.2.40
 
+# HTML scraping (Screener.in fundamentals/shareholding service)
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+
 # Optional technical-analysis helpers
 #   • TA-Lib (requires the C library libta-lib to be installed on the host)
 ta-lib>=0.4.24
