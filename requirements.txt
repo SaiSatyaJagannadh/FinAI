@@ -8,6 +8,7 @@ scipy>=1.13.0
 # HTTP helpers (useful if you call external APIs from Python)
 requests>=2.32.0
 aiohttp>=3.9.0
+yfinance>=0.2.40
 
 # Optional technical-analysis helpers
 #   • TA-Lib (requires the C library libta-lib to be installed on the host)

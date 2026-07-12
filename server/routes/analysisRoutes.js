@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { exec } = require('child_process');
+const path = require('path');
 const Stock = require('../models/Stock');
 const Analysis = require('../models/Analysis');
 const FundamentalAnalysisService = require('../services/fundamentalAnalysis');
@@ -7,6 +9,39 @@ const TechnicalAnalysisService = require('../services/technicalAnalysis');
 const MutualFundAnalysisService = require('../services/mutualFundAnalysis');
 const GrowthAnalysisService = require('../services/growthAnalysis');
 const RiskAnalysisService = require('../services/riskAnalysis');
+
+// Path to Python stock data service
+const STOCK_DATA_SERVICE = path.join(__dirname, '../../services/stockDataService.py');
+
+/**
+ * Fetch real stock data from yfinance service
+ */
+async function fetchRealStockData(symbol, exchange = 'NSE') {
+  return new Promise((resolve, reject) => {
+    const cmd = `source .venv/bin/activate && python3 "${STOCK_DATA_SERVICE}" "${symbol}" --exchange ${exchange} --period 1y --json`;
+
+    exec(cmd, { cwd: path.join(__dirname, '../../..') }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Stock data fetch error:', stderr || error.message);
+        resolve(null); // Return null on error, will fall back to mock
+        return;
+      }
+
+      try {
+        const data = JSON.parse(stdout);
+        if (data.error) {
+          console.error('Stock service error:', data.error);
+          resolve(null);
+          return;
+        }
+        resolve(data);
+      } catch (parseErr) {
+        console.error('JSON parse error:', parseErr);
+        resolve(null);
+      }
+    });
+  });
+}
 
 // Comprehensive stock analysis endpoint
 router.post('/:symbol', async (req, res) => {
@@ -50,9 +85,42 @@ router.post('/:symbol', async (req, res) => {
       }
     }
 
-    // In a real application, we would fetch data from financial APIs here
-    // For now, we'll simulate with mock data based on the stock symbol
-    const stockData = await _generateMockStockData(stock);
+    // Try to fetch REAL data from yfinance
+    let stockData = await fetchRealStockData(symbolUpper, exchange);
+    let isRealData = false;
+
+    if (!stockData || !stockData.success) {
+      console.log(`Could not fetch real data for ${symbolUpper}, using mock data`);
+      stockData = await _generateMockStockData(stock);
+      stockData.isReal = false;
+    } else {
+      console.log(`Real data fetched for ${symbolUpper}: ₹${stockData.priceData?.current}`);
+      stockData.isReal = true;
+      isRealData = true;
+
+      // Update stock record with real data
+      await Stock.findByIdAndUpdate(stock._id, {
+        name: stockData.name || stock.name,
+        sector: stockData.sector || stock.sector,
+        'basicInfo.sector': stockData.sector || stock.sector,
+        'basicInfo.industry': stockData.industry || stock.basicInfo?.industry,
+        'priceData.current': stockData.priceData?.current,
+        'priceData.previousClose': stockData.priceData?.previousClose,
+        'priceData.open': stockData.priceData?.open,
+        'priceData.dayHigh': stockData.priceData?.dayHigh,
+        'priceData.dayLow': stockData.priceData?.dayLow,
+        'priceData.volume': stockData.priceData?.volume,
+        'priceData.avgVolume': stockData.priceData?.avgVolume,
+        'priceData.peRatio': stockData.fundamental?.peRatio,
+        'priceData.pbRatio': stockData.fundamental?.pbRatio,
+        'priceData.dividendYield': stockData.fundamental?.dividendYield,
+        'priceData.updatedAt': new Date(),
+        'week52.high': stockData.fiftyTwoWeekHigh,
+        'week52.low': stockData.fiftyTwoWeekLow,
+        marketCapValue: stockData.priceData?.marketCap ? stockData.priceData.marketCap / 1e7 : stock.marketCapValue,
+        lastUpdated: new Date()
+      });
+    }
 
     // Run all analyses
     const [
@@ -145,7 +213,7 @@ router.post('/:symbol', async (req, res) => {
         recommendation
       },
 
-      dataSources: ['SIMULATED_DATA'],
+      dataSources: [stockData.isReal ? 'YAHOO_FINANCE' : 'SIMULATED_DATA'],
       analyzedAt: new Date()
     };
 
@@ -244,7 +312,7 @@ overall: {
   recommendation
 },
 
-dataSources: ['SIMULATED_DATA'],
+dataSources: [stockData.isReal ? 'YAHOO_FINANCE' : 'SIMULATED_DATA'],
 analyzedAt: new Date()
 };
 
