@@ -4,13 +4,11 @@ import AnalysisResults from '../components/AnalysisResults';
 import StockSearchForm from '../components/StockSearchForm';
 
 const StockSearch = () => {
-  const [stockSymbol, setStockSymbol] = useState('');
   const [analysisData, setAnalysisData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const handleSearch = async (symbol) => {
-    setStockSymbol(symbol.toUpperCase());
     setLoading(true);
     setError(null);
 

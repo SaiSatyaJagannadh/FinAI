@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { exec } = require('child_process');
 const path = require('path');
+const os = require('os');
 const Stock = require('../models/Stock');
 const Analysis = require('../models/Analysis');
 const FundamentalAnalysisService = require('../services/fundamentalAnalysis');
@@ -10,19 +11,24 @@ const MutualFundAnalysisService = require('../services/mutualFundAnalysis');
 const GrowthAnalysisService = require('../services/growthAnalysis');
 const RiskAnalysisService = require('../services/riskAnalysis');
 
-// Path to Python stock data service
-const STOCK_DATA_SERVICE = path.join(__dirname, '../../services/stockDataService.py');
+// Absolute paths for Python stock data service
+const PROJECT_ROOT = '/Users/saijagannadh/Desktop/AI_Agents/FinAI';
+const STOCK_DATA_SERVICE = path.join(PROJECT_ROOT, 'services/stockDataService.py');
+const PYTHON_BIN = path.join(PROJECT_ROOT, '.venv/bin/python3');
 
 /**
  * Fetch real stock data from yfinance service
  */
 async function fetchRealStockData(symbol, exchange = 'NSE') {
   return new Promise((resolve, reject) => {
-    const cmd = `source .venv/bin/activate && python3 "${STOCK_DATA_SERVICE}" "${symbol}" --exchange ${exchange} --period 1y --json`;
+    // Use absolute paths to avoid working directory issues
+    const cmd = `"${PYTHON_BIN}" "${STOCK_DATA_SERVICE}" "${symbol}" --exchange ${exchange} --period 1y --json`;
 
-    exec(cmd, { cwd: path.join(__dirname, '../../..') }, (error, stdout, stderr) => {
+    exec(cmd, { cwd: PROJECT_ROOT }, (error, stdout, stderr) => {
+      // More detailed error logging
       if (error) {
-        console.error('Stock data fetch error:', stderr || error.message);
+        console.error('Stock data fetch error:', error.message);
+        if (stderr) console.error('stderr:', stderr);
         resolve(null); // Return null on error, will fall back to mock
         return;
       }

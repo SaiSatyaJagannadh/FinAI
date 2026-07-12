@@ -65,6 +65,30 @@ def get_yahoo_symbol(symbol, exchange='NSE'):
     else:
         return clean_symbol
 
+def fetch_stock_current_price(ticker):
+    """Get current price from ticker info, with fallbacks"""
+    # Try multiple price fields
+    price = (
+        info.get('currentPrice') or
+        info.get('regularMarketPrice') or
+        info.get('navPrice') or
+        info.get('ask') or
+        info.get('bid') or
+        0
+    )
+    if price:
+        return price
+
+    # Fallback: get from last historical price
+    try:
+        hist = ticker.history(period='5d')
+        if not hist.empty:
+            return float(hist['Close'].iloc[-1])
+    except:
+        pass
+
+    return 0
+
 def fetch_stock_data(symbol, exchange='NSE', period='1y'):
     """
     Fetch real stock data from Yahoo Finance
@@ -77,41 +101,57 @@ def fetch_stock_data(symbol, exchange='NSE', period='1y'):
     Returns:
         dict with stock data
     """
-    if not YFINANCE_AVAILABLE:
-        return {
-            'error': 'yfinance not installed',
-            'symbol': symbol,
-            'exchange': exchange
-        }
+    info = {}
+    hist = None
 
-    yahoo_symbol = get_yahoo_symbol(symbol, exchange)
+    if YFINANCE_AVAILABLE:
+        yahoo_symbol = get_yahoo_symbol(symbol, exchange)
+        try:
+            ticker = yf.Ticker(yahoo_symbol)
+            info = ticker.info or {}
+            hist = ticker.history(period=period)
+            print(f"DEBUG: {symbol} -> {yahoo_symbol}, info keys: {list(info.keys())[:10]}", file=sys.stderr)
+        except Exception as e:
+            print(f"DEBUG: yfinance error for {symbol}: {e}", file=sys.stderr)
 
-    try:
-        ticker = yf.Ticker(yahoo_symbol)
-        info = ticker.info
+    # Get current price with fallback from historical data
+    current_price = (
+        info.get('currentPrice') or
+        info.get('regularMarketPrice') or
+        info.get('navPrice') or
+        0
+    )
+    if not current_price and hist is not None and not hist.empty:
+        current_price = float(hist['Close'].iloc[-1])
 
-        # Get historical data for technical analysis
-        hist = ticker.history(period=period)
+    prev_close = (
+        info.get('previousClose') or
+        info.get('regularMarketPreviousClose') or
+        0
+    )
+    if not prev_close and hist is not None and len(hist) > 1:
+        prev_close = float(hist['Close'].iloc[-2])
 
-        # Build response
-        result = {
-            'symbol': symbol,
-            'yahooSymbol': yahoo_symbol,
-            'exchange': exchange,
-            'success': True,
-            'fetchedAt': datetime.now().isoformat(),
+    # Build response
+    result = {
+        'symbol': symbol,
+        'yahooSymbol': get_yahoo_symbol(symbol, exchange) if YFINANCE_AVAILABLE else symbol,
+        'exchange': exchange,
+        'success': True,
+        'fetchedAt': datetime.now().isoformat(),
 
-            # Basic info
-            'name': info.get('longName') or info.get('shortName') or f"{symbol} Limited",
-            'sector': info.get('sector') or 'Unknown',
-            'industry': info.get('industry') or 'Unknown',
+        # Basic info
+        'name': info.get('longName') or info.get('shortName') or f"{symbol} Limited",
+        'sector': info.get('sector') or 'Unknown',
+        'industry': info.get('industry') or 'Unknown',
 
-            # Price data
-            'priceData': {
-                'current': info.get('currentPrice') or info.get('regularMarketPrice') or 0,
-                'previousClose': info.get('previousClose') or info.get('regularMarketPreviousClose') or 0,
-                'open': info.get('open') or info.get('regularMarketOpen') or 0,
-                'dayHigh': info.get('dayHigh') or info.get('regularMarketDayHigh') or 0,
+        # Price data - use historical as fallback
+        'priceData': {
+            'current': current_price,
+            'previousClose': prev_close,
+            'open': info.get('open') or info.get('regularMarketOpen') or (float(hist['Open'].iloc[-1]) if hist is not None and not hist.empty else 0),
+            'dayHigh': info.get('dayHigh') or info.get('regularMarketDayHigh') or (float(hist['High'].iloc[-1]) if hist is not None and not hist.empty else 0),
+            'dayLow': info.get('dayLow') or info.get('regularMarketDayLow') or (float(hist['Low'].iloc[-1]) if hist is not None and not hist.empty else 0),
                 'dayLow': info.get('dayLow') or info.get('regularMarketDayLow') or 0,
                 'volume': info.get('volume') or info.get('regularMarketVolume') or 0,
                 'avgVolume': info.get('averageVolume') or info.get('averageVolume10day') or 0,

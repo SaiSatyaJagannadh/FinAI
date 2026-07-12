@@ -447,6 +447,435 @@ footer {
   color: var(--error-color);
 }
 
+/* ============================================
+   Google Finance Style Overview
+   ============================================ */
+
+.gf-overview {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Header Section */
+.gf-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.gf-header-left {
+  flex: 1;
+}
+
+.gf-company-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.gf-company-name {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+.gf-exchange {
+  background: #e2e8f0;
+  color: #64748b;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.gf-price-section {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.gf-current-price {
+  font-size: 2.5rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.gf-change {
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.gf-change.positive {
+  color: #059669;
+}
+
+.gf-change.negative {
+  color: #dc2626;
+}
+
+/* Recommendation Badge */
+.gf-recommendation {
+  text-align: center;
+  padding: 1rem 1.5rem;
+  border: 2px solid;
+  border-radius: 8px;
+  min-width: 180px;
+}
+
+.gf-rec-label {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.gf-rec-action {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.gf-rec-confidence {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+}
+
+.gf-rec-horizon {
+  display: block;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 0.25rem;
+}
+
+/* Time Range Selector */
+.gf-time-selector {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.gf-time-btn {
+  background: none;
+  border: none;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.gf-time-btn:hover {
+  background: #f1f5f9;
+}
+
+.gf-time-btn.active {
+  background: #2563eb;
+  color: white;
+}
+
+/* Price Chart */
+.gf-chart-container {
+  height: 200px;
+  background: linear-gradient(180deg, #fafbfc 0%, white 100%);
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+}
+
+.gf-chart {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.gf-chart-svg {
+  flex: 1;
+  width: 100%;
+  height: calc(100% - 20px);
+  display: block;
+}
+
+.gf-chart-area {
+  transition: opacity 0.2s;
+}
+
+.gf-chart-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.625rem;
+  color: #94a3b8;
+  padding: 0.25rem 0;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+}
+
+.gf-chart-range-info {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  font-size: 0.625rem;
+  color: #94a3b8;
+}
+
+/* Chart Placeholder (fallback) */
+.gf-chart-placeholder {
+  height: 200px;
+  background: linear-gradient(180deg, #f8fafc 0%, white 100%);
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+}
+
+.gf-chart-placeholder .gf-chart-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.gf-chart-placeholder .gf-chart-label {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.75rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  z-index: 1;
+}
+
+/* Content Grid */
+.gf-content-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .gf-content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Cards */
+.gf-card {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 1.25rem;
+  border: 1px solid #e2e8f0;
+}
+
+.gf-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* Stats Grid */
+.gf-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.gf-stat-item {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0;
+}
+
+.gf-stat-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.gf-stat-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1e293b;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+}
+
+/* Fundamentals */
+.gf-fundamentals {
+  margin-bottom: 1.5rem;
+}
+
+.gf-fund-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.gf-fund-item:last-child {
+  border-bottom: none;
+}
+
+.gf-fund-label {
+  color: #64748b;
+}
+
+.gf-fund-value {
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.gf-sub-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0 0 0.75rem;
+}
+
+/* Score Bars */
+.gf-scores {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.gf-score-item {
+  display: grid;
+  grid-template-columns: 80px 1fr 30px;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.gf-score-item span:first-child {
+  color: #64748b;
+}
+
+.gf-score-bar {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.gf-score-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.gf-score-num {
+  font-weight: 600;
+  color: #1e293b;
+  text-align: right;
+}
+
+.gf-score-total {
+  padding-top: 0.75rem;
+  border-top: 1px solid #e2e8f0;
+  margin-top: 0.25rem;
+}
+
+/* Trading Information */
+.gf-trading-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.gf-trading-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.gf-trading-item:last-child {
+  border-bottom: none;
+}
+
+.gf-trading-label {
+  color: #64748b;
+}
+
+.gf-trading-value {
+  font-weight: 500;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+}
+
+/* 52 Week Range */
+.gf-52week-range {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.gf-52week-label {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+
+.gf-52week-bar {
+  height: 8px;
+  background: linear-gradient(90deg, #ef4444 0%, #22c55e 100%);
+  border-radius: 4px;
+  position: relative;
+  margin-bottom: 0.5rem;
+}
+
+.gf-52week-fill {
+  position: absolute;
+  top: -2px;
+  width: 12px;
+  height: 12px;
+  background: white;
+  border: 2px solid #2563eb;
+  border-radius: 50%;
+  transform: translateX(-50%);
+}
+
+.gf-52week-values {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+/* Data Source Badge */
+.gf-data-source {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  text-align: right;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .stock-search-page {
@@ -468,5 +897,21 @@ footer {
   .recommendation-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .gf-header {
+    flex-direction: column;
+  }
+
+  .gf-recommendation {
+    width: 100%;
+  }
+
+  .gf-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .gf-content-grid {
+    grid-template-columns: 1fr;
   }
 }
