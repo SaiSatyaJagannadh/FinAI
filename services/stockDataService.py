@@ -71,6 +71,18 @@ def get_yahoo_symbol(symbol, exchange='NSE'):
     else:
         return clean_symbol
 
+def _clean_nan(o):
+    """Replace NaN/Inf with 0 recursively — json.dumps emits literal NaN,
+    which Node's JSON.parse rejects, killing the whole real-data path."""
+    if isinstance(o, float) and (o != o or o in (float('inf'), float('-inf'))):
+        return 0
+    if isinstance(o, dict):
+        return {k: _clean_nan(v) for k, v in o.items()}
+    if isinstance(o, list):
+        return [_clean_nan(v) for v in o]
+    return o
+
+
 def fetch_stock_data(symbol, exchange='NSE', period='1y'):
     """
     Fetch real stock data from Yahoo Finance
@@ -260,7 +272,7 @@ def fetch_stock_data(symbol, exchange='NSE', period='1y'):
             for idx, row in hist.iterrows()
         ]
 
-    return result
+    return _clean_nan(result)
 
 
 def fetch_multiple_stocks(symbols, exchange='NSE', period='1y'):
