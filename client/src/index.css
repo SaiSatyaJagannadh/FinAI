@@ -737,3 +737,78 @@ html, body {
     align-items: flex-start;
   }
 }
+/* Google Finance fallback + external link */
+.gf-ext-link {
+  font-size: 0.75rem;
+  color: #1a73e8;
+  text-decoration: none;
+  margin-left: auto;
+}
+
+.gf-ext-link:hover {
+  text-decoration: underline;
+}
+
+.gf-fallback {
+  background: #fef7e0;
+  border-color: #fdd663;
+}
+
+.gf-fallback-btn {
+  display: inline-block;
+  background: #1a73e8;
+  color: #fff;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.gf-fallback-btn:hover {
+  background: #1765cc;
+}
+
+/* Plain-English glossary under the tabs */
+.glossary {
+  margin-top: 1rem;
+  background: #ffffff;
+  border: 1px solid #dadce0;
+  border-radius: 12px;
+  padding: 0.9rem 1.25rem;
+}
+
+.glossary summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #1a73e8;
+}
+
+.glossary dl {
+  margin: 0.75rem 0 0;
+  display: grid;
+  grid-template-columns: minmax(140px, max-content) 1fr;
+  gap: 0.4rem 1rem;
+  font-size: 0.8125rem;
+}
+
+.glossary dt {
+  font-weight: 600;
+  color: #202124;
+}
+
+.glossary dd {
+  margin: 0;
+  color: #5f6368;
+}
+
+@media (max-width: 600px) {
+  .glossary dl {
+    grid-template-columns: 1fr;
+  }
+
+  .glossary dd {
+    margin-bottom: 0.35rem;
+  }
+}

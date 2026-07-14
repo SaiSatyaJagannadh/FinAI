@@ -130,8 +130,12 @@ const PriceChart = ({ history, prevClose }) => {
   );
 };
 
+// Google Finance quote URL for this symbol (fallback when our data is missing/simulated)
+const googleFinanceUrl = (symbol, exchange) =>
+  `https://www.google.com/finance/quote/${encodeURIComponent(symbol || '')}:${exchange === 'BSE' ? 'BOM' : 'NSE'}`;
+
 /* ---------- beginner-friendly sentence builder ---------- */
-const buildPlainEnglish = ({ name, sector, price, changePct, isUp, fundamental, mf, growth, overall }) => {
+const buildPlainEnglish = ({ name, sector, price, changePct, isUp, fundamental, mf, growth, overall, projectedPrice1Y, epsCagr }) => {
   const out = [];
 
   if (isNum(price) && isNum(changePct)) {
@@ -168,6 +172,13 @@ const buildPlainEnglish = ({ name, sector, price, changePct, isUp, fundamental, 
     );
   }
 
+  if (isNum(projectedPrice1Y) && isNum(epsCagr) && isNum(price) && price > 0) {
+    const worth = (10000 * projectedPrice1Y) / price;
+    out.push(
+      `If profits keep growing ~${fmt(epsCagr, 1)}% a year and the market pays the same P/E, ₹10,000 invested today could be worth about ${inr(worth, 0)} in a year. This is an estimate, not a guarantee.`
+    );
+  }
+
   const rec = overall && overall.recommendation;
   if (rec && rec.action) {
     out.push(`Overall the system rates this ${rec.action}${rec.confidence ? ` (${String(rec.confidence).toLowerCase()} confidence)` : ''}.`);
@@ -197,6 +208,15 @@ const GoogleFinanceOverview = ({ stock, analysis }) => {
   const isUp = isNum(change) ? change >= 0 : true;
 
   const week52 = stock.week52 || {};
+  const gfUrl = googleFinanceUrl(stock.symbol, exchange);
+
+  // 1-year price projection (doc method): EPS grows at guidance/historical CAGR,
+  // market keeps paying the same P/E → price grows at the same rate.
+  const proj = growth.projections || {};
+  const epsCagr = proj.eps && isNum(proj.eps.cagr) ? proj.eps.cagr : null;
+  const projectedPrice1Y = isNum(price) && isNum(epsCagr) ? price * (1 + epsCagr / 100) : null;
+  const projectedPrice2Y = isNum(price) && isNum(epsCagr) ? price * Math.pow(1 + epsCagr / 100, 2) : null;
+  const targetPrice = overall.recommendation && overall.recommendation.targetPrice;
 
   // Dividend yield / book value only appear on some responses
   const dividendYield = priceData.dividendYield ?? stock.dividendYield;
@@ -227,6 +247,8 @@ const GoogleFinanceOverview = ({ stock, analysis }) => {
     mf,
     growth,
     overall,
+    projectedPrice1Y,
+    epsCagr,
   });
 
   const bars = [
@@ -247,6 +269,9 @@ const GoogleFinanceOverview = ({ stock, analysis }) => {
             {stock.symbol} &middot; {exchange}
           </span>
           {isDemo && <span className="gf-demo">Demo data — not live</span>}
+          <a className="gf-ext-link" href={gfUrl} target="_blank" rel="noopener noreferrer">
+            View on Google Finance ↗
+          </a>
         </div>
         <div className="gf-price-row">
           <span className="gf-price">{inr(price)}</span>
@@ -260,6 +285,20 @@ const GoogleFinanceOverview = ({ stock, analysis }) => {
         </div>
         <div className="gf-caption">Data: Yahoo Finance + Screener.in</div>
       </div>
+
+      {/* Live-data fallback: we couldn't fetch this stock, send the user to Google Finance */}
+      {isDemo && (
+        <div className="gf-card gf-fallback">
+          <h3 className="gf-card-title">⚠ We couldn't fetch live data for this stock</h3>
+          <p className="explainer">
+            The numbers below are <strong>simulated placeholders</strong>, not real market data — don't make a
+            buy/sell decision from them.
+          </p>
+          <a className="gf-fallback-btn" href={gfUrl} target="_blank" rel="noopener noreferrer">
+            Check the real numbers on Google Finance ↗
+          </a>
+        </div>
+      )}
 
       {/* Price chart */}
       <div className="gf-card gf-chart-card">
@@ -278,6 +317,43 @@ const GoogleFinanceOverview = ({ stock, analysis }) => {
           ))}
         </div>
       </div>
+
+      {/* If you invest today — 1-year projection from EPS growth (guidance/history) */}
+      {isNum(projectedPrice1Y) && price > 0 && !isDemo && (
+        <div className="gf-card">
+          <h3 className="gf-card-title">If you invest today</h3>
+          <p className="explainer">
+            Estimate assumes profits (EPS) grow at {fmt(epsCagr, 1)}% a year — from management guidance where
+            available, else last year's growth — and the market keeps paying today's P/E. Not a guarantee.
+          </p>
+          <div className="gf-stats-grid">
+            <div className="gf-stat">
+              <span className="gf-stat-label">Price today</span>
+              <span className="gf-stat-value">{inr(price)}</span>
+            </div>
+            <div className="gf-stat">
+              <span className="gf-stat-label">Est. price in 1 year</span>
+              <span className="gf-stat-value" style={{ color: projectedPrice1Y >= price ? '#137333' : '#a50e0e' }}>
+                {inr(projectedPrice1Y)} ({epsCagr >= 0 ? '+' : ''}{fmt(epsCagr, 1)}%)
+              </span>
+            </div>
+            <div className="gf-stat">
+              <span className="gf-stat-label">Est. price in 2 years</span>
+              <span className="gf-stat-value">{inr(projectedPrice2Y)}</span>
+            </div>
+            <div className="gf-stat">
+              <span className="gf-stat-label">₹10,000 → in 1 year</span>
+              <span className="gf-stat-value">{inr((10000 * projectedPrice1Y) / price, 0)}</span>
+            </div>
+            {isNum(targetPrice) && (
+              <div className="gf-stat">
+                <span className="gf-stat-label">System target price</span>
+                <span className="gf-stat-value">{inr(targetPrice)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Plain English */}
       {sentences.length > 0 && (

@@ -7,10 +7,12 @@ const StockSearch = () => {
   const [analysisData, setAnalysisData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [lastSymbol, setLastSymbol] = useState('');
 
   const handleSearch = async (symbol) => {
     setLoading(true);
     setError(null);
+    setLastSymbol(symbol.toUpperCase());
 
     try {
       const response = await axios.post(`/api/analysis/${symbol}`, {
@@ -35,7 +37,23 @@ const StockSearch = () => {
 
         {loading && <div className="loading">Analyzing stock...</div>}
 
-        {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="error">
+            {error}
+            {lastSymbol && (
+              <>
+                {' — '}
+                <a
+                  href={`https://www.google.com/finance/quote/${encodeURIComponent(lastSymbol)}:NSE`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  check {lastSymbol} on Google Finance ↗
+                </a>
+              </>
+            )}
+          </div>
+        )}
 
         {analysisData && (
           <div className="results-container">

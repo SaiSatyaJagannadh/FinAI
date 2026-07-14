@@ -17,3 +17,20 @@ build/
 .env.example
 
 sector_map*
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Generated / tool output
+graphify-out/
+DESIGN-IS-*/
+
+# Personal notes & scratch files (not part of the app)
+maindocumentforcontext.docx
+my_notes
+runcode
+run_all.sh
+debug_infy.py
+server_test.js
