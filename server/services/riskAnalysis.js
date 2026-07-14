@@ -37,9 +37,10 @@ const RiskAnalysisService = {
       totalRiskScore += risk.geopoliticalRisk.score * weights.geopoliticalRisk;
       totalRiskScore += risk.disruptionRisk.score * weights.disruptionRisk;
 
-      // Convert to 0-100 scale where lower is better (less risky)
-      // We'll invert it so higher score = less risk (better)
-      risk.overallScore = Math.round(100 - Math.max(0, Math.min(100, totalRiskScore)));
+      // Sub-scores are higher = safer, so the weighted total already is too.
+      // (No inversion — riskCategory, the recommendation weighting, and the
+      // frontend "higher = safer" label all read it that way.)
+      risk.overallScore = Math.round(Math.max(0, Math.min(100, totalRiskScore)));
 
       // Risk category
       risk.riskCategory = this._getRiskCategory(risk.overallScore);
@@ -126,7 +127,7 @@ const RiskAnalysisService = {
       score -= 20; // Very high debt
     }
 
-    // Interest coverage analysis
+    // Interest coverage analysis (0 = not reported, not "can't pay" — neutral)
     if (interestCoverage >= 10) {
       score += 15; // Strong ability to pay interest
     } else if (interestCoverage >= 5) {
@@ -134,19 +135,17 @@ const RiskAnalysisService = {
     } else if (interestCoverage >= 3) {
       score += 5; // Borderline coverage
     } else if (interestCoverage >= 1.5) {
-      score -= 10; //Insufficientcoverage
-    } else {
-      score -= 20; //Verypooroverage
+      score -= 10; // Insufficient coverage
+    } else if (interestCoverage > 0) {
+      score -= 20; // Very poor coverage
     }
 
-    // Current ratio (liquidity) also affects credit risk
+    // Current ratio (liquidity) also affects credit risk (0 = not reported — neutral)
     if (currentRatio >= 2) {
       score += 5; // Good short-term liquidity
     } else if (currentRatio >= 1.5) {
       score += 3; // Adequate liquidity
-    } else if (currentRatio >= 1) {
-      score += 0; // Minimum acceptable
-    } else {
+    } else if (currentRatio > 0 && currentRatio < 1) {
       score -= 10; // Poor liquidity increases credit risk
     }
 
@@ -163,15 +162,13 @@ const RiskAnalysisService = {
    * Analyze liquidity risk (trading volume, bid-ask spread, market depth)
    */
   _analyzeLiquidityRisk: function(stockData) {
-    const avgVolume = stockData.averageVolume || 0;
-    const marketCap = stockData.marketCapValue || 0;
+    const avgVolume = stockData.priceData?.avgVolume || stockData.averageVolume || 0;
     const bidAskSpread = stockData.bidAskSpread || 0.5; // Default 0.5%
 
     let score = 50; // Start with medium risk
 
-    // Daily dollar volume (liquidity proxy)
-    // Assuming average price ~ marketCap / sharesOutstanding, but we'll use a simpler approach
-    const dollarVolume = avgVolume * (stockData.currentPrice || 100); // Rough estimate
+    // Daily traded value (₹) as the liquidity proxy
+    const dollarVolume = avgVolume * (stockData.priceData?.current || stockData.currentPrice || 100);
 
     if (dollarVolume >= 1000000000) { // $1B+ daily volume
       score += 20;
@@ -288,16 +285,19 @@ const RiskAnalysisService = {
     // In a real implementation, this would use sector risk data
     // For now, we'll use a simplified approach
 
+    // Keys must match the canonical names from services/sector_map.py
     const riskScores = {
       'Banking': 60, // Regulatory risk, credit cycles
-      'Insurance': 55, // Regulatory, interest rate sensitivity
       'Pharma': 50, // Regulatory (FDA), patent cliffs
-      'IT': 45, // Competition, obsolescence risk
+      'IT_Services': 45, // Competition, obsolescence risk
       'FMCG': 40, // Stable demand, brand risk
       'Auto': 55, // Cyclical, disruption risk (EV)
       'Energy': 65, // Commodity prices, regulatory, ESG
-      'Utilities': 35, // Regulated but stable
-      'Real Estate': 50, // Interest rate sensitivity, cyclical
+      'Telecom': 55, // Capex-heavy, regulatory, price wars
+      'Construction': 60, // Cyclical, leverage, execution risk
+      'Metals': 65, // Commodity cycles
+      'Chemicals': 50, // Input costs, environmental regulation
+      'Industrials': 50, // Capex cycles
       'default': 50
     };
 
@@ -400,8 +400,10 @@ const RiskAnalysisService = {
       score += 3;
     }
 
-    // Asset age (newer assets = less obsolescence risk)
-    if (averageAgeOfAssets <= 5) {
+    // Asset age (newer assets = less obsolescence risk; 0 = unknown — neutral)
+    if (averageAgeOfAssets === 0) {
+      // no data, no adjustment
+    } else if (averageAgeOfAssets <= 5) {
       score += 10;
     } else if (averageAgeOfAssets <= 10) {
       score += 5;
@@ -413,8 +415,10 @@ const RiskAnalysisService = {
       score -= 10;
     }
 
-    // Business model age (newer models = more adaptable)
-    if (businessModelAge <= 5) {
+    // Business model age (newer models = more adaptable; 0 = unknown — neutral)
+    if (businessModelAge === 0) {
+      // no data, no adjustment
+    } else if (businessModelAge <= 5) {
       score += 10;
     } else if (businessModelAge <= 10) {
       score += 5;

@@ -4,8 +4,8 @@ const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const path = require('path');
 
-// Load environment variables
-dotenv.config();
+// Load environment variables (server/.env regardless of cwd)
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 // Import routes
 const stockRoutes = require('./routes/stockRoutes');

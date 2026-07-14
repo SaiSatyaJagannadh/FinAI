@@ -85,21 +85,32 @@ def fetch_stock_data(symbol, exchange='NSE', period='1y'):
     """
     info = {}
     hist = None
+    used_symbol = symbol
 
     if YFINANCE_AVAILABLE:
-        yahoo_symbol = get_yahoo_symbol(symbol, exchange)
-        try:
-            ticker = yf.Ticker(yahoo_symbol)
-            info = ticker.info or {}
-            hist = ticker.history(period=period)
-            # Debug output
+        # Try the requested exchange first, then BSE — many small caps
+        # (e.g. GRAVITY = Gravity (India) Ltd) are BSE-only.
+        candidates = [get_yahoo_symbol(symbol, exchange)]
+        if exchange.upper() == 'NSE':
+            bse = get_yahoo_symbol(symbol, 'BSE')
+            if bse not in candidates:
+                candidates.append(bse)
+        for yahoo_symbol in candidates:
+            try:
+                ticker = yf.Ticker(yahoo_symbol)
+                info = ticker.info or {}
+                hist = ticker.history(period=period)
+            except Exception as e:
+                print(f"DEBUG: yfinance error for {yahoo_symbol}: {e}", file=sys.stderr)
+                info, hist = {}, None
+                continue
+            used_symbol = yahoo_symbol
             print(f"DEBUG: {symbol}->{yahoo_symbol}", file=sys.stderr)
             print(f"  info currentPrice: {info.get('currentPrice')}", file=sys.stderr)
             print(f"  hist rows: {len(hist) if hist is not None else 0}", file=sys.stderr)
-            if hist is not None and not hist.empty:
-                print(f"  last close: {hist['Close'].iloc[-1]}", file=sys.stderr)
-        except Exception as e:
-            print(f"DEBUG: yfinance error for {symbol}: {e}", file=sys.stderr)
+            if info.get('currentPrice') or info.get('regularMarketPrice') or (hist is not None and not hist.empty):
+                break  # got real data
+            info, hist = {}, None  # nothing on this exchange, try next
 
     # Helper to safely get from historical data
     def get_hist_price(key, idx=-1, default=0):
@@ -109,6 +120,18 @@ def fetch_stock_data(symbol, exchange='NSE', period='1y'):
         except:
             pass
         return default
+
+    # Annualized volatility (%) from daily returns; yfinance has no volatility field.
+    volatility = 20
+    if hist is not None and len(hist) > 20:
+        returns = hist['Close'].pct_change().dropna()
+        if len(returns) > 1:
+            volatility = round(float(returns.std() * (252 ** 0.5) * 100), 2)
+
+    # yfinance reports some foreign-listed financials (e.g. INFY) in USD while
+    # marketCap/prices are INR — zero out balance-sheet absolutes on mismatch
+    # rather than emit numbers ~88x off.
+    cross_currency = (info.get('financialCurrency') or info.get('currency')) != (info.get('currency') or 'INR')
 
     # Get current price with fallback from historical data
     # Try multiple fields from info dictionary
@@ -141,9 +164,11 @@ def fetch_stock_data(symbol, exchange='NSE', period='1y'):
     # Build response
     result = {
         'symbol': symbol,
-        'yahooSymbol': get_yahoo_symbol(symbol, exchange) if YFINANCE_AVAILABLE else symbol,
-        'exchange': exchange,
-        'success': True,
+        'yahooSymbol': used_symbol,
+        'exchange': 'BSE' if used_symbol.endswith('.BO') else exchange,
+        # Honest flag: no price = nothing fetched. Node falls back to mock
+        # data (dataSources: SIMULATED_DATA) instead of showing all zeros.
+        'success': current_price > 0,
         'fetchedAt': datetime.now().isoformat(),
 
         # Basic info
@@ -201,13 +226,13 @@ def fetch_stock_data(symbol, exchange='NSE', period='1y'):
 
         # Risk metrics
         'beta': info.get('beta') or 1,
-        'volatility': info.get('volatilityAvg') or info.get('volatility') or 20,
+        'volatility': volatility,
         'correlationToMarket': 0.7,  # Default assumption
 
-        # Balance sheet
-        'totalDebt': info.get('totalDebt') or 0,
-        'totalCash': info.get('totalCash') or 0,
-        'freeCashFlow': info.get('freeCashflow') or 0,
+        # Balance sheet (0 when financialCurrency != listing currency)
+        'totalDebt': 0 if cross_currency else (info.get('totalDebt') or 0),
+        'totalCash': 0 if cross_currency else (info.get('totalCash') or 0),
+        'freeCashFlow': 0 if cross_currency else (info.get('freeCashflow') or 0),
 
         # Other
         'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh') or 0,

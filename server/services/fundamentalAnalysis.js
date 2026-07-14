@@ -132,7 +132,7 @@ class FundamentalAnalysisService {
     const growthRate = stockData.growthRate ||
                      (stockData.epsGrowth?.yoy || 0) ||
                      (stockData.revenueGrowth?.yoy || 0) ||
-                     10; // Default growth assumption
+                     0; // No data — don't fabricate a growth assumption
 
     const pegRatio = growthRate > 0 ? peRatio / growthRate : 0;
 
@@ -143,7 +143,10 @@ class FundamentalAnalysisService {
     let score = 50;
     let interpretation = 'Moderate growth valuation';
 
-    if (pegRatio > 0) {
+    if (growthRate < 0) {
+      score = 25; // Shrinking earnings — worse than any in-range PEG
+      interpretation = 'Negative growth: paying a multiple for shrinking earnings';
+    } else if (pegRatio > 0) {
       if (pegRatio < minPEG) {
         score = 85; // Excellent - low PEG means good growth relative to price
         interpretation = 'Attractive: Strong growth relative to price';

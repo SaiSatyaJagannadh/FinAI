@@ -20,7 +20,7 @@ const PYTHON_BIN = process.env.PYTHON_BIN || path.join(PROJECT_ROOT, '.venv/bin/
 // Bump when the analysis output shape changes so old cached docs (missing new
 // fields like industryComparison/quarterly) are treated as stale and recomputed
 // instead of being served back with gaps. Self-healing — no manual cache purge.
-const ANALYSIS_SCHEMA_VERSION = 2;
+const ANALYSIS_SCHEMA_VERSION = 3;
 
 /**
  * Fetch real stock data from yfinance service
@@ -109,7 +109,9 @@ router.post('/:symbol', async (req, res) => {
         return res.json({
           ...stock.toObject(),
           priceHistory: stock.priceHistory || [],
-          analysis: recentAnalysis.toObject(),
+          // Serve the response-shaped object, not the flattened storage shape
+          // (they differ: rsi Number vs {value,signal}, flat vs nested risk).
+          analysis: recentAnalysis.response || recentAnalysis.toObject(),
           cached: true
         });
       }
@@ -375,7 +377,9 @@ disruptionRisk: {
 },
 maxDrawdown: 0, // Placeholder - would need historical data to calculate
 sectorConcentrationRisk: 0, // Placeholder
-score: riskAnalysis.overallScore
+score: riskAnalysis.overallScore,
+overallScore: riskAnalysis.overallScore,
+riskCategory: riskAnalysis.riskCategory || 'MODERATE'
 },
 
 overall: {
@@ -392,6 +396,7 @@ dataSources: usedSources,
 analyzedAt: new Date()
 };
 
+analysis.response = responseAnalysis;
 await analysis.save();
 
 res.json({
@@ -544,7 +549,7 @@ async function _generateMockStockData(stock) {
     marketCapValue: 50000 + (pseudoRandom(0, 50000)), // 50,000-100,000 Cr
     priceData: {
       current: currentData.close,
-      change: ((currentData.close - previousClose) / previousClose) * 100,
+      change: currentData.close - previousClose,
       changePercent: ((currentData.close - previousClose) / previousClose) * 100,
       previousClose: previousClose,
       open: currentData.open,
@@ -617,13 +622,13 @@ function _calculateRecommendation(analyses, currentPrice = 0) {
     risk
   } = analyses;
 
-  // Weighted scoring (higher is better)
+  // Weighted scoring (higher is better; ?? so a legitimate 0 isn't replaced)
   const scores = {
-    fundamental: fundamental.overallScore || 50,
-    technical: technical.overallScore || 50,
-    mutualFund: mutualFund.score || 50,
-    growth: growth.overallScore || 50,
-    risk: 100 - (risk.overallScore || 50) // Invert risk score (lower risk = higher score)
+    fundamental: fundamental.overallScore ?? 50,
+    technical: technical.overallScore ?? 50,
+    mutualFund: mutualFund.score ?? 50,
+    growth: growth.overallScore ?? 50,
+    risk: risk.overallScore ?? 50 // Already higher = safer, no inversion
   };
 
   // Weights for final score

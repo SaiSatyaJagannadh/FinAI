@@ -91,6 +91,10 @@ const analysisSchema = new mongoose.Schema({
   score: Number
 }
   },
+  // Exact response-shaped analysis object (what the frontend consumes).
+  // Served verbatim on cache hits — the typed fields above are a flattened
+  // storage shape the frontend can't read (e.g. rsi as a bare Number).
+  response: { type: mongoose.Schema.Types.Mixed },
   // Metadata
   analyzedAt: {
     type: Date,

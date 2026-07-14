@@ -161,28 +161,48 @@ const TechnicalAnalysisService = {
    * Calculate MACD (Moving Average Convergence Divergence)
    */
   _calculateMACD: function(prices) {
-    const ema12 = this._calculateEMA(prices, 12);
-    const ema26 = this._calculateEMA(prices, 26);
-
-    if (ema12 === null || ema26 === null) {
+    if (prices.length < 26 + 9) {
       return { macd: 0, signalLine: 0, histogram: 0, signal: 'NEUTRAL', score: 50 };
     }
 
-    const macdLine = ema12 - ema26;
-    // Signal line is 9-period EMA of MACD line
-    // For simplicity, we'll approximate it
-    const signalLine = macdLine * 0.9; // Rough approximation
+    const closes = prices.map(p => p.close || 0);
+    // Full EMA series so the signal line is a real 9-period EMA of MACD,
+    // not an approximation (which made bearish crossovers impossible).
+    const emaSeries = (values, period) => {
+      const k = 2 / (period + 1);
+      let e = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      const out = [e];
+      for (let i = period; i < values.length; i++) {
+        e = values[i] * k + e * (1 - k);
+        out.push(e);
+      }
+      return out;
+    };
+
+    const e12 = emaSeries(closes, 12);
+    const e26 = emaSeries(closes, 26);
+    // e26[j] is the EMA at closes index 25+j; the matching e12 entry is e12[j+14]
+    const macdSeries = e26.map((v, j) => e12[j + 14] - v);
+    const signalSeries = emaSeries(macdSeries, 9);
+
+    const macdLine = macdSeries[macdSeries.length - 1];
+    const signalLine = signalSeries[signalSeries.length - 1];
     const histogram = macdLine - signalLine;
 
     let signal = 'NEUTRAL';
     let score = 50;
 
+    // Score off histogram as % of price so a ₹100 and ₹3000 stock with the
+    // same relative trend score the same
+    const currentPrice = closes[closes.length - 1] || 1;
+    const histPct = (histogram / currentPrice) * 100;
+
     if (histogram > 0) {
       signal = 'BULLISH';
-      score = 50 + Math.min(30, Math.abs(histogram) * 10); // Scale up
+      score = 50 + Math.min(30, Math.abs(histPct) * 40);
     } else if (histogram < 0) {
       signal = 'BEARISH';
-      score = 50 - Math.min(30, Math.abs(histogram) * 10); // Scale down
+      score = 50 - Math.min(30, Math.abs(histPct) * 40);
     }
 
     return {

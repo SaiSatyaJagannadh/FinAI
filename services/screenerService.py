@@ -40,8 +40,9 @@ NOTES
   User-Agent. If the site changes markup or blocks, every metric degrades to
   `None`/0 and `success` becomes false; the analysis pipeline keeps working
   on yfinance data.
-* This is the standalone (non-consolidated) company page. Good enough for
-  YoY ratios and the MF/FII/DII shareholding trend.
+* Uses the consolidated company page — matches the group-level numbers
+  Screener/Groww show by default. Companies without consolidated financials
+  are served the standalone page at the same URL, so parsing still works.
 """
 
 import json
@@ -66,7 +67,7 @@ except Exception:
         return "default"
 
 
-BASE_URL = "https://www.screener.in/company/{sym}/"
+BASE_URL = "https://www.screener.in/company/{sym}/consolidated/"
 
 # Tickers renamed on the exchange — Screener uses the new symbol.
 RENAMED = {
