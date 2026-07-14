@@ -51,6 +51,8 @@ NSE_SYMBOL_MAP = {
     'POWERGRID': 'POWERGRID.NS',
     'COALINDIA': 'COALINDIA.NS',
     'TATASTEEL': 'TATASTEEL.NS',
+    'ZOMATO': 'ETERNAL.NS',  # Zomato renamed to Eternal on NSE (2025); old ticker dead
+    'ETERNAL': 'ETERNAL.NS',
 }
 
 def get_yahoo_symbol(symbol, exchange='NSE'):

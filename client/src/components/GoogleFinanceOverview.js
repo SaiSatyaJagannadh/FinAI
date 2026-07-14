@@ -1,368 +1,321 @@
 import React, { useState } from 'react';
 
-const GoogleFinanceOverview = ({ stock, analysis }) => {
-  const [timeRange, setTimeRange] = useState('1M');
+/* ---------- pure formatting helpers (guard everything) ---------- */
+const isNum = (v) => v !== null && v !== undefined && !isNaN(v);
+const fmt = (v, d = 2) => (isNum(v) ? Number(v).toFixed(d) : 'N/A');
+const inr = (v, d = 2) =>
+  isNum(v)
+    ? '₹' +
+      Number(v).toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d })
+    : 'N/A';
+const intIN = (v) => (isNum(v) ? Number(v).toLocaleString('en-IN') : 'N/A');
 
+// Market cap in rupees -> "X.XX Lakh Cr" (>=1e12) or "X,XXX Cr" (>=1e7)
+const marketCapStr = (v) => {
+  if (!isNum(v)) return 'N/A';
+  if (v >= 1e12) return `₹${(v / 1e12).toFixed(2)} Lakh Cr`;
+  if (v >= 1e7) return `₹${Math.round(v / 1e7).toLocaleString('en-IN')} Cr`;
+  return inr(v, 0);
+};
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthLabel = (dateStr) => {
+  if (!dateStr || dateStr.length < 7) return '';
+  const m = parseInt(dateStr.slice(5, 7), 10);
+  return isNum(m) && m >= 1 && m <= 12 ? `${MONTHS[m - 1]} '${dateStr.slice(2, 4)}` : '';
+};
+
+const scoreColor = (s) => (isNum(s) ? (s >= 70 ? '#137333' : s >= 40 ? '#f59e0b' : '#a50e0e') : '#9aa0a6');
+const scoreWord = (s) => (isNum(s) ? (s >= 70 ? 'Strong' : s >= 40 ? 'Okay' : 'Weak') : '—');
+
+/* ---------- SVG price chart (no libraries) ---------- */
+const RANGES = [
+  { key: '1M', days: 22 },
+  { key: '6M', days: 132 },
+  { key: '1Y', days: Infinity },
+];
+
+const PriceChart = ({ history, prevClose }) => {
+  const [range, setRange] = useState('1Y');
+
+  const valid = (history || []).filter((d) => d && isNum(d.close));
+  if (valid.length < 2) {
+    return <div className="gf-chart-empty">Price chart unavailable</div>;
+  }
+
+  const days = (RANGES.find((r) => r.key === range) || {}).days || Infinity;
+  const data = days === Infinity ? valid : valid.slice(-days);
+  const n = data.length;
+
+  const W = 1000, H = 260, padL = 10, padR = 66, padT = 16, padB = 26;
+  const closes = data.map((d) => d.close);
+  const showPrev = isNum(prevClose);
+  const lo = Math.min(...closes, showPrev ? prevClose : Infinity);
+  const hi = Math.max(...closes, showPrev ? prevClose : -Infinity);
+  const span = hi - lo || 1;
+
+  const px = (i) => padL + (i / (n - 1)) * (W - padL - padR);
+  const py = (c) => padT + (1 - (c - lo) / span) * (H - padT - padB);
+
+  const linePath = 'M' + data.map((d, i) => `${px(i).toFixed(1)},${py(d.close).toFixed(1)}`).join(' L');
+  const baseY = H - padB;
+  const areaPath = `${linePath} L${px(n - 1).toFixed(1)},${baseY} L${px(0).toFixed(1)},${baseY} Z`;
+
+  const up = data[n - 1].close >= data[0].close;
+  const color = up ? '#137333' : '#a50e0e';
+  const gid = `grad-${up ? 'up' : 'down'}`;
+
+  const ticks = [0, 1, 2, 3].map((k) => Math.round((k * (n - 1)) / 3));
+
+  return (
+    <div>
+      <div className="gf-range-btns">
+        {RANGES.map((r) => (
+          <button
+            key={r.key}
+            className={`gf-range-btn ${range === r.key ? 'active' : ''}`}
+            onClick={() => setRange(r.key)}
+          >
+            {r.key}
+          </button>
+        ))}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="gf-chart-svg" role="img" aria-label="Price history">
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.18" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* previous close reference */}
+        {showPrev && (
+          <line
+            x1={padL}
+            y1={py(prevClose)}
+            x2={W - padR}
+            y2={py(prevClose)}
+            stroke="#9aa0a6"
+            strokeWidth="1"
+            strokeDasharray="4 4"
+          />
+        )}
+
+        <path d={areaPath} fill={`url(#${gid})`} />
+        <path d={linePath} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        <circle cx={px(n - 1)} cy={py(data[n - 1].close)} r="3.5" fill={color} />
+
+        {/* y-axis min / max */}
+        <text x={W - padR + 8} y={py(hi) + 4} className="gf-axis" textAnchor="start">
+          {inr(hi, 0)}
+        </text>
+        <text x={W - padR + 8} y={py(lo) + 4} className="gf-axis" textAnchor="start">
+          {inr(lo, 0)}
+        </text>
+
+        {/* x-axis month labels */}
+        {ticks.map((idx, k) => (
+          <text
+            key={k}
+            x={px(idx)}
+            y={H - 6}
+            className="gf-axis"
+            textAnchor={k === 0 ? 'start' : k === ticks.length - 1 ? 'end' : 'middle'}
+          >
+            {monthLabel(data[idx].date)}
+          </text>
+        ))}
+      </svg>
+    </div>
+  );
+};
+
+/* ---------- beginner-friendly sentence builder ---------- */
+const buildPlainEnglish = ({ name, sector, price, changePct, isUp, fundamental, mf, growth, overall }) => {
+  const out = [];
+
+  if (isNum(price) && isNum(changePct)) {
+    out.push(`${name} trades at ${inr(price)}, ${isUp ? 'up' : 'down'} ${fmt(Math.abs(changePct))}% today.`);
+  }
+
+  const ic = fundamental && fundamental.industryComparison;
+  const icPe = ic && ic.peRatio;
+  if (icPe && isNum(icPe.value) && icPe.verdict && icPe.verdict !== 'NO_DATA') {
+    const rangeTxt = Array.isArray(icPe.sectorRange) ? ` (${icPe.sectorRange[0]}–${icPe.sectorRange[1]}×)` : '';
+    const sec = sector || 'similar';
+    let tail;
+    if (icPe.verdict === 'CHEAPER_THAN_SECTOR') tail = `cheaper than typical ${sec} companies${rangeTxt}, so it looks reasonably priced.`;
+    else if (icPe.verdict === 'PRICIER_THAN_SECTOR') tail = `pricier than typical ${sec} companies${rangeTxt}, so the market expects strong growth.`;
+    else tail = `in line with other ${sec} companies${rangeTxt}.`;
+    out.push(`Its P/E is ${fmt(icPe.value, 1)} — ${tail}`);
+  } else if (fundamental && isNum(fundamental.peRatio && fundamental.peRatio.trailing)) {
+    out.push(`Its price is about ${fmt(fundamental.peRatio.trailing, 1)}× its yearly profit per share (P/E).`);
+  }
+
+  if (mf && mf.sentiment && isNum(mf.totalFundsHolding) && isNum(mf.totalFundsAnalyzed)) {
+    const trimmed = Array.isArray(mf.topHolders) && mf.topHolders.some((h) => isNum(h && h.changeLastQuarter) && h.changeLastQuarter < 0);
+    out.push(
+      `Big mutual funds look ${String(mf.sentiment).toLowerCase()} — ${mf.totalFundsHolding} of ${mf.totalFundsAnalyzed} funds tracked hold this stock${trimmed ? ', though some trimmed their stake last quarter' : ''}.`
+    );
+  }
+
+  const rev = growth && growth.revenueGrowth;
+  if (rev && isNum(rev.yoy)) {
+    const q = growth.quarterly;
+    const warn = q && Array.isArray(q.warnings) && q.warnings.length > 0;
+    out.push(
+      `Sales ${rev.yoy >= 0 ? 'grew' : 'shrank'} ${fmt(Math.abs(rev.yoy))}% over the past year${warn ? ', but the latest quarter was softer than a year ago' : ''}.`
+    );
+  }
+
+  const rec = overall && overall.recommendation;
+  if (rec && rec.action) {
+    out.push(`Overall the system rates this ${rec.action}${rec.confidence ? ` (${String(rec.confidence).toLowerCase()} confidence)` : ''}.`);
+  }
+
+  return out;
+};
+
+/* ---------- main overview ---------- */
+const GoogleFinanceOverview = ({ stock, analysis }) => {
   if (!stock || !analysis) return null;
 
   const priceData = stock.priceData || {};
   const fundamental = analysis.fundamental || {};
   const overall = analysis.overall || {};
-  const recommendation = overall.recommendation || {};
+  const mf = analysis.mutualFundConviction || {};
+  const growth = analysis.growth || {};
 
-  // Format currency
-  const formatCurrency = (val) => {
-    if (!val) return 'N/A';
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 2
-    }).format(val);
-  };
+  const name = stock.name || stock.symbol || 'This stock';
+  const exchange = stock.exchange || 'NSE';
+  const isDemo = Array.isArray(analysis.dataSources) && analysis.dataSources.includes('SIMULATED_DATA');
 
-  // Format large numbers
-  const formatLargeNumber = (num) => {
-    if (!num) return 'N/A';
-    if (num >= 1e7) return `₹${(num / 1e7).toFixed(2)} Lakh Cr`;
-    if (num >= 1e5) return `₹${(num / 1e5).toFixed(2)} Lakh`;
-    if (num >= 1e3) return `₹${(num / 1e3).toFixed(2)} K`;
-    return num.toString();
-  };
+  const price = priceData.current;
+  const prevClose = priceData.previousClose;
+  const change = isNum(price) && isNum(prevClose) ? price - prevClose : null;
+  const changePct = isNum(change) && isNum(prevClose) && prevClose !== 0 ? (change / prevClose) * 100 : null;
+  const isUp = isNum(change) ? change >= 0 : true;
 
-  // Format percentage
-  const formatPercent = (val) => {
-    if (!val && val !== 0) return 'N/A';
-    const sign = val >= 0 ? '+' : '';
-    return `${sign}${val.toFixed(2)}%`;
-  };
+  const week52 = stock.week52 || {};
 
-  // Get recommendation color
-  const getRecColor = (action) => {
-    switch (action?.toUpperCase()) {
-      case 'BUY': return '#00c853';
-      case 'SELL': return '#ff1744';
-      default: return '#ff9800';
-    }
-  };
+  // Dividend yield / book value only appear on some responses
+  const dividendYield = priceData.dividendYield ?? stock.dividendYield;
+  const bookValue = priceData.bookValue ?? fundamental.bookValue;
 
-  // Price stats
-  const price = priceData.current || 0;
-  const change = priceData.change || 0;
-  const changePercent = priceData.changePercent || 0;
-  const isPositive = change >= 0;
-
-  // 52 week range
-  const week52High = stock.week52?.high || 0;
-  const week52Low = stock.week52?.low || 0;
-
-  // Key stats data
   const keyStats = [
-    { label: 'Market Cap', value: formatLargeNumber(priceData.marketCap) },
-    { label: 'P/E Ratio', value: fundamental.peRatio?.trailing ? fundamental.peRatio.trailing.toFixed(2) : 'N/A' },
-    { label: 'P/B Ratio', value: fundamental.priceToBook?.value?.toFixed(2) || fundamental.priceToBook?.toFixed(2) || 'N/A' },
-    { label: 'Book Value', value: formatCurrency(priceData.current / (fundamental.priceToBook?.value || 25)) },
-    { label: 'Dividend Yield', value: (priceData.dividendYield * 100)?.toFixed(2) + '%' || 'N/A' },
-    { label: 'EPS (TTM)', value: fundamental.roe ? (priceData.current / (fundamental.peRatio?.trailing || 25)).toFixed(2) : 'N/A' },
-    { label: 'ROE', value: fundamental.roe?.value?.toFixed(1) + '%' || fundamental.roe?.toFixed(1) + '%' || 'N/A' },
-    { label: 'ROA', value: fundamental.roa?.value?.toFixed(1) + '%' || fundamental.roa?.toFixed(1) + '%' || 'N/A' },
-    { label: 'Debt/Equity', value: fundamental.debtToEquity?.value?.toFixed(2) || fundamental.debtToEquity?.toFixed(2) || 'N/A' },
-    { label: 'Current Ratio', value: fundamental.currentRatio?.value?.toFixed(2) || fundamental.currentRatio?.toFixed(2) || 'N/A' },
-    { label: "52 Week High", value: formatCurrency(week52High) },
-    { label: "52 Week Low", value: formatCurrency(week52Low) },
+    { label: 'Open', value: inr(priceData.open) },
+    { label: 'High', value: inr(priceData.dayHigh) },
+    { label: 'Low', value: inr(priceData.dayLow) },
+    { label: 'Prev Close', value: inr(prevClose) },
+    { label: 'Volume', value: intIN(priceData.volume) },
+    { label: 'Avg Volume', value: intIN(priceData.avgVolume) },
+    { label: 'Market Cap', value: marketCapStr(priceData.marketCap) },
+    { label: '52-wk High', value: inr(week52.high) },
+    { label: '52-wk Low', value: inr(week52.low) },
+    { label: 'P/E (TTM)', value: fmt(fundamental.peRatio && fundamental.peRatio.trailing) },
   ];
+  if (isNum(dividendYield)) keyStats.push({ label: 'Dividend Yield', value: `${fmt(dividendYield)}%` });
+  if (isNum(bookValue)) keyStats.push({ label: 'Book Value', value: inr(bookValue) });
 
-  // Trading stats
-  const tradingStats = [
-    { label: 'Volume', value: priceData.volume?.toLocaleString('en-IN') || 'N/A' },
-    { label: 'Avg. Volume', value: priceData.avgVolume?.toLocaleString('en-IN') || 'N/A' },
-    { label: "Day's Range", value: `${formatCurrency(priceData.dayLow || 0)} - ${formatCurrency(priceData.dayHigh || 0)}` },
-    { label: 'Open', value: formatCurrency(priceData.open || 0) },
-    { label: 'Prev. Close', value: formatCurrency(priceData.previousClose || 0) },
+  const sentences = buildPlainEnglish({
+    name,
+    sector: stock.sector,
+    price,
+    changePct,
+    isUp,
+    fundamental,
+    mf,
+    growth,
+    overall,
+  });
+
+  const bars = [
+    { label: 'Fundamental', score: overall.fundamentalScore },
+    { label: 'Technical', score: overall.technicalScore },
+    { label: 'Growth', score: overall.growthScore },
+    { label: 'Fund Conviction', score: overall.convictionScore },
+    { label: 'Risk (higher = safer)', score: overall.riskScore },
   ];
 
   return (
     <div className="gf-overview">
-      {/* Header Section */}
-      <div className="gf-header">
-        <div className="gf-header-left">
-          <div className="gf-company-info">
-            <h1 className="gf-company-name">{stock.name || stock.symbol}</h1>
-            <span className="gf-exchange">{stock.exchange || 'NSE'}</span>
-          </div>
-          <div className="gf-price-section">
-            <span className="gf-current-price">{formatCurrency(price)}</span>
-            <span className={`gf-change ${isPositive ? 'positive' : 'negative'}`}>
-              {isPositive ? '▲' : '▼'} {formatCurrency(Math.abs(change))} ({formatPercent(changePercent)})
-            </span>
-          </div>
-        </div>
-
-        {/* Recommendation Badge */}
-        <div className="gf-recommendation" style={{ borderColor: getRecColor(recommendation.action) }}>
-          <span className="gf-rec-label">Our Recommendation</span>
-          <span className="gf-rec-action" style={{ color: getRecColor(recommendation.action) }}>
-            {recommendation.action || 'HOLD'}
+      {/* Header */}
+      <div className="gf-head">
+        <div className="gf-head-top">
+          <h1 className="gf-name">{name}</h1>
+          <span className="gf-chip">
+            {stock.symbol} &middot; {exchange}
           </span>
-          <span className="gf-rec-confidence">{recommendation.confidence || 'MEDIUM'} CONFIDENCE</span>
-          <span className="gf-rec-horizon">{recommendation.investmentHorizon || 'SHORT-TERM'}</span>
+          {isDemo && <span className="gf-demo">Demo data — not live</span>}
+        </div>
+        <div className="gf-price-row">
+          <span className="gf-price">{inr(price)}</span>
+          {isNum(change) && (
+            <span className={`gf-change ${isUp ? 'up' : 'down'}`}>
+              {isUp ? '+' : '−'}
+              {inr(Math.abs(change))} ({isUp ? '+' : '−'}
+              {fmt(Math.abs(changePct))}%)
+            </span>
+          )}
+        </div>
+        <div className="gf-caption">Data: Yahoo Finance + Screener.in</div>
+      </div>
+
+      {/* Price chart */}
+      <div className="gf-card gf-chart-card">
+        <PriceChart history={stock.priceHistory} prevClose={prevClose} />
+      </div>
+
+      {/* Key stats */}
+      <div className="gf-card">
+        <h3 className="gf-card-title">Key stats</h3>
+        <div className="gf-stats-grid">
+          {keyStats.map((s) => (
+            <div key={s.label} className="gf-stat">
+              <span className="gf-stat-label">{s.label}</span>
+              <span className="gf-stat-value">{s.value}</span>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Time Range Selector */}
-      <div className="gf-time-selector">
-        {['1D', '1W', '1M', '3M', '6M', '1Y', 'ALL'].map(range => (
-          <button
-            key={range}
-            className={`gf-time-btn ${timeRange === range ? 'active' : ''}`}
-            onClick={() => setTimeRange(range)}
-          >
-            {range}
-          </button>
-        ))}
-      </div>
-
-      {/* Price Chart - SVG-based */}
-      <div className="gf-chart-container">
-        <PriceChart
-          priceHistory={stock.priceHistory || []}
-          timeRange={timeRange}
-          isPositive={isPositive}
-        />
-      </div>
-
-      {/* Main Content Grid */}
-      <div className="gf-content-grid">
-        {/* Key Statistics */}
-        <div className="gf-card gf-stats-card">
-          <h3 className="gf-card-title">Key Statistics</h3>
-          <div className="gf-stats-grid">
-            {keyStats.map(stat => (
-              <div key={stat.label} className="gf-stat-item">
-                <span className="gf-stat-label">{stat.label}</span>
-                <span className="gf-stat-value">{stat.value}</span>
-              </div>
+      {/* Plain English */}
+      {sentences.length > 0 && (
+        <div className="gf-card gf-plain">
+          <h3 className="gf-card-title">In plain English</h3>
+          <ul className="gf-plain-list">
+            {sentences.map((s, i) => (
+              <li key={i}>{s}</li>
             ))}
-          </div>
+          </ul>
         </div>
+      )}
 
-        {/* About / Fundamentals */}
-        <div className="gf-card gf-about-card">
-          <h3 className="gf-card-title">Fundamentals</h3>
-          <div className="gf-fundamentals">
-            <div className="gf-fund-item">
-              <span className="gf-fund-label">Sector</span>
-              <span className="gf-fund-value">{stock.sector || 'N/A'}</span>
-            </div>
-            <div className="gf-fund-item">
-              <span className="gf-fund-label">Industry</span>
-              <span className="gf-fund-value">{stock.industry || stock.basicInfo?.industry || 'N/A'}</span>
-            </div>
-            <div className="gf-fund-item">
-              <span className="gf-fund-label">Profit Margin</span>
-              <span className="gf-fund-value">{(fundamental.profitMargin?.value || fundamental.profitMargin || 0).toFixed(2)}%</span>
-            </div>
-            <div className="gf-fund-item">
-              <span className="gf-fund-label">Debt/Equity</span>
-              <span className="gf-fund-value">{fundamental.debtToEquity?.value || fundamental.debtToEquity || 'N/A'}</span>
-            </div>
-          </div>
-
-          {/* Score Breakdown */}
-          <h4 className="gf-sub-title">Analysis Scores</h4>
-          <div className="gf-scores">
-            <div className="gf-score-item">
-              <span>Fundamental</span>
-              <div className="gf-score-bar">
-                <div className="gf-score-fill" style={{ width: `${overall.fundamentalScore || 50}%`, backgroundColor: '#2196f3' }}></div>
+      {/* Score bars */}
+      <div className="gf-card">
+        <h3 className="gf-card-title">How this stock scores</h3>
+        <p className="explainer">Each bar is 0&ndash;100. Green is strong, amber is okay, red is weak.</p>
+        <div className="gf-bars">
+          {bars.map((b) => (
+            <div key={b.label} className="gf-bar-row">
+              <span className="gf-bar-label">{b.label}</span>
+              <div className="gf-bar-track">
+                <div
+                  className="gf-bar-fill"
+                  style={{
+                    width: `${isNum(b.score) ? Math.max(0, Math.min(100, b.score)) : 0}%`,
+                    backgroundColor: scoreColor(b.score),
+                  }}
+                />
               </div>
-              <span className="gf-score-num">{overall.fundamentalScore || 50}</span>
+              <span className="gf-bar-num">{isNum(b.score) ? Math.round(b.score) : 'N/A'}</span>
+              <span className="gf-bar-verdict" style={{ color: scoreColor(b.score) }}>
+                {scoreWord(b.score)}
+              </span>
             </div>
-            <div className="gf-score-item">
-              <span>Technical</span>
-              <div className="gf-score-bar">
-                <div className="gf-score-fill" style={{ width: `${overall.technicalScore || 50}%`, backgroundColor: '#9c27b0' }}></div>
-              </div>
-              <span className="gf-score-num">{overall.technicalScore || 50}</span>
-            </div>
-            <div className="gf-score-item">
-              <span>Growth</span>
-              <div className="gf-score-bar">
-                <div className="gf-score-fill" style={{ width: `${overall.growthScore || 50}%`, backgroundColor: '#4caf50' }}></div>
-              </div>
-              <span className="gf-score-num">{overall.growthScore || 50}</span>
-            </div>
-            <div className="gf-score-item">
-              <span>Risk</span>
-              <div className="gf-score-bar">
-                <div className="gf-score-fill" style={{ width: `${100 - (overall.riskScore || 50)}%`, backgroundColor: '#ff9800' }}></div>
-              </div>
-              <span className="gf-score-num">{overall.riskScore || 50}</span>
-            </div>
-            <div className="gf-score-item gf-score-total">
-              <span>Overall Score</span>
-              <div className="gf-score-bar">
-                <div className="gf-score-fill" style={{ width: `${overall.weightedScore || 50}%`, backgroundColor: getRecColor(recommendation.action) }}></div>
-              </div>
-              <span className="gf-score-num">{overall.weightedScore || 50}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Trading Information */}
-        <div className="gf-card gf-trading-card">
-          <h3 className="gf-card-title">Trading Information</h3>
-          <div className="gf-trading-list">
-            {tradingStats.map(stat => (
-              <div key={stat.label} className="gf-trading-item">
-                <span className="gf-trading-label">{stat.label}</span>
-                <span className="gf-trading-value">{stat.value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* 52 Week Range Visual */}
-          <div className="gf-52week-range">
-            <span className="gf-52week-label">52-Week Range</span>
-            <div className="gf-52week-bar">
-              <div className="gf-52week-fill" style={{
-                left: `${((price - week52Low) / (week52High - week52Low || 1)) * 100}%`
-              }}></div>
-            </div>
-            <div className="gf-52week-values">
-              <span>{formatCurrency(week52Low)}</span>
-              <span>{formatCurrency(week52High)}</span>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
-
-      {/* Data Source Badge */}
-      <div className="gf-data-source">
-        Data Source: {analysis.dataSources?.join(', ') || 'Unknown'}
-        {stock.lastUpdated && <span> • Last Updated: {new Date(stock.lastUpdated).toLocaleString()}</span>}
-      </div>
-    </div>
-  );
-};
-
-// Simple SVG Price Chart Component
-const PriceChart = ({ priceHistory, timeRange, isPositive }) => {
-  // If no price history, show placeholder
-  if (!priceHistory || priceHistory.length === 0) {
-    return (
-      <div className="gf-chart-placeholder">
-        <span className="gf-chart-label">No chart data available - showing mock data</span>
-        <svg viewBox="0 0 100 30" className="gf-chart-svg">
-          <path
-            d="M0,25 Q25,15 50,20 T100,10"
-            fill="none"
-            stroke="#94a3b8"
-            strokeWidth="2"
-          />
-        </svg>
-      </div>
-    );
-  }
-
-  // Filter data based on time range
-  const now = new Date();
-  let filteredData = [...priceHistory];
-
-  switch (timeRange) {
-    case '1D':
-      filteredData = filteredData.slice(-1); // Today only
-      break;
-    case '1W':
-      filteredData = filteredData.slice(-7);
-      break;
-    case '1M':
-      filteredData = filteredData.slice(-30);
-      break;
-    case '3M':
-      filteredData = filteredData.slice(-90);
-      break;
-    case '6M':
-      filteredData = filteredData.slice(-180);
-      break;
-    case '1Y':
-    case 'ALL':
-    default:
-      // Use all data
-      break;
-  }
-
-  // Extract close prices
-  const closePrices = filteredData.map(d => d.close);
-  const minPrice = Math.min(...closePrices);
-  const maxPrice = Math.max(...closePrices);
-  const priceRange = maxPrice - minPrice || 1;
-
-  // Generate SVG path
-  const width = 100;
-  const height = 30;
-  const padding = 2;
-
-  const points = filteredData.map((d, i) => {
-    const x = (i / (filteredData.length - 1 || 1)) * width;
-    const y = height - padding - ((d.close - minPrice) / priceRange) * (height - padding * 2);
-    return `${x},${y}`;
-  });
-
-  const linePath = points.join(' L ') || `M0,${height / 2} L${width},${height / 2}`;
-  const areaPath = `M0,${height} L ${linePath.replace(/M\d+,\d+/, 'M0,')} L${width},${height} Z`;
-
-  const chartColor = isPositive ? '#059669' : '#dc2626';
-  const chartGradient = isPositive ? '#dcfce7' : '#fee2e2';
-
-  return (
-    <div className="gf-chart">
-      <svg viewBox={`0 0 ${width} ${height}`} className="gf-chart-svg" preserveAspectRatio="none">
-        {/* Gradient defs */}
-        <defs>
-          <linearGradient id={`gradient-${timeRange}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={chartColor} stopOpacity="0.3" />
-            <stop offset="100%" stopColor={chartColor} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-
-        {/* Area fill */}
-        <path
-          d={areaPath}
-          fill={`url(#gradient-${timeRange})`}
-          className="gf-chart-area"
-        />
-
-        {/* Line */}
-        <path
-          d={'M' + linePath}
-          fill="none"
-          stroke={chartColor}
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-
-        {/* End point dot */}
-        {filteredData.length > 0 && (
-          <circle
-            cx={width}
-            cy={height - padding - ((closePrices[closePrices.length - 1] - minPrice) / priceRange) * (height - padding * 2)}
-            r="1.5"
-            fill={chartColor}
-          />
-        )}
-      </svg>
-
-      {/* Price range labels */}
-      <div className="gf-chart-labels">
-        <span className="gf-chart-max">{maxPrice.toFixed(2)}</span>
-        <span className="gf-chart-min">{minPrice.toFixed(2)}</span>
-      </div>
-
-      {/* Range indicator */}
-      <span className="gf-chart-range-info">
-        {filteredData.length} data points shown
-      </span>
     </div>
   );
 };

@@ -67,6 +67,11 @@ except Exception:
 
 
 BASE_URL = "https://www.screener.in/company/{sym}/"
+
+# Tickers renamed on the exchange — Screener uses the new symbol.
+RENAMED = {
+    "ZOMATO": "ETERNAL",  # Zomato -> Eternal (2025)
+}
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -142,11 +147,80 @@ def _row_label_contains(rows, needle):
     return None
 
 
+def _table_headers(tbl):
+    """Column headers (e.g. 'Mar 2026') of a Screener data table, minus the
+    leading empty label cell."""
+    if tbl is None:
+        return []
+    tr = tbl.find("tr")
+    if tr is None:
+        return []
+    return [c.get_text(" ", strip=True) for c in tr.find_all(["td", "th"])][1:]
+
+
+def _pct_change(new, old):
+    if new is None or old in (None, 0):
+        return None
+    return round((new - old) / abs(old) * 100.0, 2)
+
+
+def _declining_streak(values):
+    """Consecutive declining periods counted from the most recent value."""
+    nums = [v for v in values if v is not None]
+    streak = 0
+    for i in range(len(nums) - 1, 0, -1):
+        if nums[i] < nums[i - 1]:
+            streak += 1
+        else:
+            break
+    return streak
+
+
+def _build_quarterly(q_tbl):
+    """Quarterly trend block from the `#quarters` table: raw series for the
+    UI plus QoQ, same-quarter YoY (seasonality-aware), declining streaks and
+    bank NPAs when present."""
+    rows = _table_rows(q_tbl)
+    if not rows:
+        return None
+    labels = _table_headers(q_tbl)
+    sales = _row_label_contains(rows, "sales") or _row_label_contains(rows, "revenue")
+    profit = _row_label_contains(rows, "net profit")
+    opm = _row_label_contains(rows, "opm") or _row_label_contains(rows, "financing margin")
+    gross_npa = _row_label_contains(rows, "gross npa")
+    net_npa = _row_label_contains(rows, "net npa")
+    if not sales:
+        return None
+
+    def last_n(vals, n=8):
+        return vals[-n:] if vals else []
+
+    q = {
+        "labels": labels[-8:],
+        "sales": last_n(sales),
+        "netProfit": last_n(profit),
+        "opm": last_n(opm),
+        "salesQoQ": _pct_change(sales[-1], sales[-2]) if len(sales) >= 2 else None,
+        "profitQoQ": _pct_change(profit[-1], profit[-2]) if profit and len(profit) >= 2 else None,
+        # Same quarter last year (4 back) — the seasonality-safe comparison
+        "salesYoYQuarter": _pct_change(sales[-1], sales[-5]) if len(sales) >= 5 else None,
+        "profitYoYQuarter": _pct_change(profit[-1], profit[-5]) if profit and len(profit) >= 5 else None,
+        "decliningSalesQuarters": _declining_streak(sales),
+        "decliningProfitQuarters": _declining_streak(profit or []),
+    }
+    if gross_npa:
+        q["grossNPA"] = gross_npa[-1]
+    if net_npa:
+        q["netNPA"] = net_npa[-1]
+    return q
+
+
 def fetch_company(symbol):
     """Fetch + parse one Screener.in company page. Returns the dict above."""
     if not REQUESTS_AVAILABLE:
         return {"success": False, "error": "requests/beautifulsoup4 not installed"}
     sym = (symbol or "").strip().upper()
+    sym = RENAMED.get(sym, sym)
 
     try:
         resp = requests.get(BASE_URL.format(sym=sym), headers=HEADERS, timeout=12)
@@ -186,18 +260,33 @@ def fetch_company(symbol):
 
     # --- Annual P&L table (Sales / Net Profit / EPS series) ---
     fin_rows = _table_rows(_section_table(soup, "profit-loss"))
-    sales = _row_label_contains(fin_rows, "sales")
+    sales = _row_label_contains(fin_rows, "sales") or _row_label_contains(fin_rows, "revenue")
     profit = _row_label_contains(fin_rows, "net profit")
     eps = _row_label_contains(fin_rows, "eps")
     opm_series = _row_label_contains(fin_rows, "opm")
+    op_profit = _row_label_contains(fin_rows, "operating profit") or _row_label_contains(fin_rows, "financing profit")
+    pbt = _row_label_contains(fin_rows, "profit before tax")
 
     revenue_yoy = _yoy_last_two(sales) if sales else 0.0
     profit_yoy = _yoy_last_two(profit) if profit else 0.0
     eps_yoy = _yoy_last_two(eps) if eps else 0.0
+    # Operating profit excludes Other Income, so its YoY is clean of
+    # exceptional/one-off gains that distort reported Net Profit growth.
+    op_profit_yoy = _yoy_last_two(op_profit) if op_profit else 0.0
+    pbt_yoy = _yoy_last_two(pbt) if pbt else 0.0
     opm = opm_series[-1] if opm_series else None
     net_margin = None
     if sales and profit and sales[-1]:
         net_margin = round(profit[-1] / sales[-1] * 100.0, 2)
+
+    # --- Quarterly results table ---
+    quarterly = _build_quarterly(_section_table(soup, "quarters"))
+
+    # --- Efficiency ratios (`#ratios` section) ---
+    ratio_rows = _table_rows(_section_table(soup, "ratios"))
+    debtor_days = _row_label_contains(ratio_rows, "debtor days")
+    ccc = _row_label_contains(ratio_rows, "cash conversion cycle")
+    wc_days = _row_label_contains(ratio_rows, "working capital days")
 
     # --- Debt/Equity from the balance sheet (Borrowings / (Equity+Reserves)) ---
     bs_rows = _table_rows(_section_table(soup, "balance-sheet"))
@@ -234,15 +323,32 @@ def fetch_company(symbol):
         },
         "roe": _nz(roe),
         "roa": _nz(roa),
+        "roce": _nz(top.get("ROCE")),
         "operatingMargin": _nz(opm),
         "profitMargin": _nz(net_margin),
         "debtToEquity": _nz(debt_to_equity),
         "currentRatio": _nz(current_ratio),
-        "revenueGrowth": {"yoy": revenue_yoy, "qoq": 0},
-        "profitGrowth": {"yoy": profit_yoy, "qoq": 0},
+        # Latest annual sales in ₹ Cr (feeds growth projections)
+        "revenue": _nz(sales[-1]) if sales else 0,
+        "revenueGrowth": {
+            "yoy": revenue_yoy,
+            "qoq": _nz(quarterly and quarterly.get("salesQoQ")),
+        },
+        "profitGrowth": {
+            "yoy": profit_yoy,
+            "qoq": _nz(quarterly and quarterly.get("profitQoQ")),
+        },
         "epsGrowth": {"yoy": eps_yoy},
         "bookValueGrowth": {"yoy": 0},
         "dividendGrowth": {"yoy": 0},
+        "operatingProfitGrowth": {"yoy": op_profit_yoy},
+        "pbtGrowth": {"yoy": pbt_yoy},
+        "quarterly": quarterly,
+        "efficiency": {
+            "debtorDays": debtor_days[-1] if debtor_days else None,
+            "cashConversionCycle": ccc[-1] if ccc else None,
+            "workingCapitalDays": wc_days[-1] if wc_days else None,
+        },
         "shareholding": shareholding,
     }
     return result

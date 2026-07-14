@@ -1,13 +1,28 @@
 import React from 'react';
 
+const isNum = (v) => v !== null && v !== undefined && !isNaN(v);
+const fmt = (v, d = 2) => (isNum(v) ? Number(v).toFixed(d) : 'N/A');
+
 const GrowthAnalysis = ({ data }) => {
   if (!data) return <div>No growth data available</div>;
 
-  const { revenueGrowth, profitGrowth, epsGrowth, bookValueGrowth, dividendGrowth, overallScore, projections } = data;
+  const {
+    revenueGrowth = {},
+    profitGrowth = {},
+    epsGrowth = {},
+    bookValueGrowth = {},
+    dividendGrowth = {},
+    overallScore,
+    projections = {},
+    operatingProfitGrowth,
+    pbtGrowth,
+    quarterly
+  } = data;
 
   return (
     <div className="analysis-panel">
       <h3>Growth Analysis</h3>
+      <p className="explainer">Each quarter is compared with the SAME quarter a year ago, to cancel out seasonal ups and downs.</p>
       <div className="metrics-grid">
         {/* Growth Metrics */}
         <div className="metric-group">
@@ -15,9 +30,9 @@ const GrowthAnalysis = ({ data }) => {
           <div className="metric">
             <span>Revenue Growth:</span>
             <div>
-              <span>QoQ: {revenueGrowth.qoq.toFixed(2)}%</span>
+              <span>QoQ: {fmt(revenueGrowth.qoq)}%</span>
               <br />
-              <span>YoY: {revenueGrowth.yoy.toFixed(2)}%
+              <span>YoY: {fmt(revenueGrowth.yoy)}%
                 <span className={revenueGrowth.yoy > 0 ? 'positive' : revenueGrowth.yoy < 0 ? 'negative' : 'neutral'}>
                   ({revenueGrowth.trend})
                 </span>
@@ -27,9 +42,9 @@ const GrowthAnalysis = ({ data }) => {
           <div className="metric">
             <span>Profit Growth:</span>
             <div>
-              <span>QoQ: {profitGrowth.qoq.toFixed(2)}%</span>
+              <span>QoQ: {fmt(profitGrowth.qoq)}%</span>
               <br />
-              <span>YoY: {profitGrowth.yoy.toFixed(2)}%
+              <span>YoY: {fmt(profitGrowth.yoy)}%
                 <span className={profitGrowth.yoy > 0 ? 'positive' : profitGrowth.yoy < 0 ? 'negative' : 'neutral'}>
                   ({profitGrowth.trend})
                 </span>
@@ -39,9 +54,9 @@ const GrowthAnalysis = ({ data }) => {
           <div className="metric">
             <span>EPS Growth:</span>
             <div>
-              <span>QoQ: {epsGrowth.qoq.toFixed(2)}%</span>
+              <span>QoQ: {fmt(epsGrowth.qoq)}%</span>
               <br />
-              <span>YoY: {epsGrowth.yoy.toFixed(2)}%
+              <span>YoY: {fmt(epsGrowth.yoy)}%
                 <span className={epsGrowth.yoy > 0 ? 'positive' : epsGrowth.yoy < 0 ? 'negative' : 'neutral'}>
                   ({epsGrowth.trend})
                 </span>
@@ -51,9 +66,9 @@ const GrowthAnalysis = ({ data }) => {
           <div className="metric">
             <span>Book Value Growth:</span>
             <div>
-              <span>QoQ: {bookValueGrowth.qoq.toFixed(2)}%</span>
+              <span>QoQ: {fmt(bookValueGrowth.qoq)}%</span>
               <br />
-              <span>YoY: {bookValueGrowth.yoy.toFixed(2)}%
+              <span>YoY: {fmt(bookValueGrowth.yoy)}%
                 <span className={bookValueGrowth.yoy > 0 ? 'positive' : bookValueGrowth.yoy < 0 ? 'negative' : 'neutral'}>
                   ({bookValueGrowth.trend})
                 </span>
@@ -63,16 +78,114 @@ const GrowthAnalysis = ({ data }) => {
           <div className="metric">
             <span>Dividend Growth:</span>
             <div>
-              <span>QoQ: {dividendGrowth.qoq.toFixed(2)}%</span>
+              <span>QoQ: {fmt(dividendGrowth.qoq)}%</span>
               <br />
-              <span>YoY: {dividendGrowth.yoy.toFixed(2)}%
+              <span>YoY: {fmt(dividendGrowth.yoy)}%
                 <span className={dividendGrowth.yoy > 0 ? 'positive' : dividendGrowth.yoy < 0 ? 'negative' : 'neutral'}>
                   ({dividendGrowth.trend})
                 </span>
               </span>
             </div>
           </div>
+          {operatingProfitGrowth && (
+            <div className="metric">
+              <span>Operating Profit Growth (YoY, excludes one-off gains):</span>
+              <span className={operatingProfitGrowth.yoy > 0 ? 'positive' : operatingProfitGrowth.yoy < 0 ? 'negative' : 'neutral'}>
+                {fmt(operatingProfitGrowth.yoy)}% ({operatingProfitGrowth.trend})
+              </span>
+            </div>
+          )}
+          {pbtGrowth && (
+            <div className="metric">
+              <span>PBT Growth (YoY):</span>
+              <span className={pbtGrowth.yoy > 0 ? 'positive' : pbtGrowth.yoy < 0 ? 'negative' : 'neutral'}>
+                {fmt(pbtGrowth.yoy)}% ({pbtGrowth.trend})
+              </span>
+            </div>
+          )}
         </div>
+
+        {/* Quarterly Results Trend */}
+        {quarterly && quarterly.sales && (
+          <div className="metric-group">
+            <h4>Quarterly Results Trend</h4>
+            {(quarterly.warnings || []).map((w, i) => (
+              <div key={i} className="metric">
+                <span className="negative">⚠ {w}</span>
+              </div>
+            ))}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', fontSize: '0.85em', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '4px' }}></th>
+                    {quarterly.labels.map((l, i) => (
+                      <th key={i} style={{ textAlign: 'right', padding: '4px' }}>{l}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={{ padding: '4px' }}><strong>Sales (Cr)</strong></td>
+                    {quarterly.sales.map((v, i) => (
+                      <td key={i} style={{ textAlign: 'right', padding: '4px' }}>{v?.toLocaleString('en-IN') ?? '—'}</td>
+                    ))}
+                  </tr>
+                  {quarterly.netProfit && quarterly.netProfit.length > 0 && (
+                    <tr>
+                      <td style={{ padding: '4px' }}><strong>Net Profit (Cr)</strong></td>
+                      {quarterly.netProfit.map((v, i) => (
+                        <td key={i} style={{ textAlign: 'right', padding: '4px' }}>{v?.toLocaleString('en-IN') ?? '—'}</td>
+                      ))}
+                    </tr>
+                  )}
+                  {quarterly.opm && quarterly.opm.length > 0 && (
+                    <tr>
+                      <td style={{ padding: '4px' }}><strong>OPM %</strong></td>
+                      {quarterly.opm.map((v, i) => (
+                        <td key={i} style={{ textAlign: 'right', padding: '4px' }}>{v ?? '—'}</td>
+                      ))}
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="metric">
+              <span>Sales QoQ:</span>
+              <span className={quarterly.salesQoQ > 0 ? 'positive' : quarterly.salesQoQ < 0 ? 'negative' : 'neutral'}>
+                {quarterly.salesQoQ != null ? `${quarterly.salesQoQ.toFixed(2)}%` : 'N/A'}
+              </span>
+            </div>
+            <div className="metric">
+              <span>Sales vs same quarter last year (seasonality-adjusted):</span>
+              <span className={quarterly.salesYoYQuarter > 0 ? 'positive' : quarterly.salesYoYQuarter < 0 ? 'negative' : 'neutral'}>
+                {quarterly.salesYoYQuarter != null ? `${quarterly.salesYoYQuarter.toFixed(2)}%` : 'N/A'}
+              </span>
+            </div>
+            <div className="metric">
+              <span>Profit vs same quarter last year:</span>
+              <span className={quarterly.profitYoYQuarter > 0 ? 'positive' : quarterly.profitYoYQuarter < 0 ? 'negative' : 'neutral'}>
+                {quarterly.profitYoYQuarter != null ? `${quarterly.profitYoYQuarter.toFixed(2)}%` : 'N/A'}
+              </span>
+            </div>
+            {quarterly.grossNPA != null && (
+              <div className="metric">
+                <span>Gross NPA (banks):</span>
+                <span className={quarterly.grossNPA < 2 ? 'positive' : quarterly.grossNPA < 5 ? 'neutral' : 'negative'}>
+                  {quarterly.grossNPA}%
+                </span>
+              </div>
+            )}
+            {quarterly.netNPA != null && (
+              <div className="metric">
+                <span>Net NPA (banks):</span>
+                <span className={quarterly.netNPA < 1 ? 'positive' : quarterly.netNPA < 3 ? 'neutral' : 'negative'}>
+                  {quarterly.netNPA}%
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Growth Scores */}
         <div className="metric-group">
@@ -116,35 +229,35 @@ const GrowthAnalysis = ({ data }) => {
             <>
               <div className="metric">
                 <span>EPS (Current):</span>
-                <span>₹{projections.eps.current.toFixed(2)}</span>
+                <span>₹{fmt(projections.eps.current)}</span>
               </div>
               <div className="metric">
                 <span>EPS (1Y Proj):</span>
-                <span>₹{projections.eps.projected1Y.toFixed(2)}</span>
+                <span>₹{fmt(projections.eps.projected1Y)}</span>
               </div>
               <div className="metric">
                 <span>EPS (2Y Proj):</span>
-                <span>₹{projections.eps.projected2Y.toFixed(2)}</span>
+                <span>₹{fmt(projections.eps.projected2Y)}</span>
               </div>
               <div className="metric">
                 <span>EPS CAGR:</span>
-                <span>{projections.eps.cagr.toFixed(2)}%</span>
+                <span>{fmt(projections.eps.cagr)}%</span>
               </div>
               <div className="metric">
                 <span>Revenue (Current):</span>
-                <span>₹{projections.revenue.current.toFixed(0)} Cr</span>
+                <span>₹{fmt(projections.revenue.current, 0)} Cr</span>
               </div>
               <div className="metric">
                 <span>Revenue (1Y Proj):</span>
-                <span>₹{projections.revenue.projected1Y.toFixed(0)} Cr</span>
+                <span>₹{fmt(projections.revenue.projected1Y, 0)} Cr</span>
               </div>
               <div className="metric">
                 <span>Revenue (2Y Proj):</span>
-                <span>₹{projections.revenue.projected2Y.toFixed(0)} Cr</span>
+                <span>₹{fmt(projections.revenue.projected2Y, 0)} Cr</span>
               </div>
               <div className="metric">
                 <span>Revenue CAGR:</span>
-                <span>{projections.revenue.cagr.toFixed(2)}%</span>
+                <span>{fmt(projections.revenue.cagr)}%</span>
               </div>
             </>
           ) : (

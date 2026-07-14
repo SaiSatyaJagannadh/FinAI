@@ -16,9 +16,6 @@ function App() {
       <nav>
         <ul>
           <li><a href="/">Stock Search</a></li>
-          <li><a href="/portfolio">Portfolio</a></li>
-          <li><a href="/watchlist">Watchlist</a></li>
-          <li><a href="/analysis">Analysis</a></li>
         </ul>
       </nav>
       <main>

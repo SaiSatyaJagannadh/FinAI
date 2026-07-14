@@ -1,7 +1,7 @@
 import React from 'react';
 
 const RecommendationCard = ({ recommendation }) => {
-  const { action, confidence, targetPrice, stopLoss, investmentHorizon, score } = recommendation;
+  const { action, confidence, targetPrice, stopLoss, investmentHorizon, score } = recommendation || {};
 
   const getRecommendationClass = () => {
     switch (action) {

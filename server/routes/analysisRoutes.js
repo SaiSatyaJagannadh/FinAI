@@ -17,6 +17,11 @@ const STOCK_DATA_SERVICE = path.join(PROJECT_ROOT, 'services/stockDataService.py
 const SCREENER_SERVICE = path.join(PROJECT_ROOT, 'services/screenerService.py');
 const PYTHON_BIN = process.env.PYTHON_BIN || path.join(PROJECT_ROOT, '.venv/bin/python3');
 
+// Bump when the analysis output shape changes so old cached docs (missing new
+// fields like industryComparison/quarterly) are treated as stale and recomputed
+// instead of being served back with gaps. Self-healing — no manual cache purge.
+const ANALYSIS_SCHEMA_VERSION = 2;
+
 /**
  * Fetch real stock data from yfinance service
  */
@@ -97,11 +102,13 @@ router.post('/:symbol', async (req, res) => {
         stock: stock._id
       }).sort({ analyzedAt: -1 });
 
-      // If analysis is less than 1 hour old, return cached result
+      // Serve cache only if fresh (<1h) AND built by the current schema version.
       if (recentAnalysis &&
+          recentAnalysis.schemaVersion === ANALYSIS_SCHEMA_VERSION &&
           (Date.now() - recentAnalysis.analyzedAt.getTime()) < 3600000) {
         return res.json({
           ...stock.toObject(),
+          priceHistory: stock.priceHistory || [],
           analysis: recentAnalysis.toObject(),
           cached: true
         });
@@ -133,12 +140,15 @@ router.post('/:symbol', async (req, res) => {
         for (const k of ['peRatio', 'pbRatio', 'dividendYield', 'eps', 'bookValue']) {
           if (screener.fundamental && screener.fundamental[k]) stockData.fundamental[k] = screener.fundamental[k];
         }
-        for (const k of ['roe', 'roa', 'profitMargin', 'operatingMargin', 'debtToEquity', 'currentRatio']) {
+        for (const k of ['roe', 'roa', 'roce', 'profitMargin', 'operatingMargin', 'debtToEquity', 'currentRatio', 'revenue']) {
           if (screener[k]) stockData[k] = screener[k];
         }
-        for (const k of ['revenueGrowth', 'profitGrowth', 'epsGrowth', 'bookValueGrowth', 'dividendGrowth']) {
+        for (const k of ['revenueGrowth', 'profitGrowth', 'epsGrowth', 'bookValueGrowth', 'dividendGrowth', 'operatingProfitGrowth', 'pbtGrowth']) {
           if (screener[k] && (screener[k].yoy || screener[k].qoq)) stockData[k] = screener[k];
         }
+        if (screener.quarterly) stockData.quarterly = screener.quarterly;
+        if (screener.efficiency) stockData.efficiency = screener.efficiency;
+        if (screener.fundamental && screener.fundamental.eps) stockData.eps = screener.fundamental.eps;
         if (screener.name) stockData.name = screener.name;
         if (screener.sector) stockData.sector = screener.sector;
         screenerShareholding = screener.shareholding || null;
@@ -171,6 +181,12 @@ router.post('/:symbol', async (req, res) => {
         priceHistory: (stockData.priceHistory || []).slice(-260),
         lastUpdated: new Date()
       });
+    }
+
+    // Optional management guidance from the client (e.g. { epsGrowthNextYear: 12,
+    // revenueGrowthNextYear: 9 }) — drives growth projections instead of history.
+    if (req.body.managementGuidance) {
+      stockData.managementGuidance = req.body.managementGuidance;
     }
 
     // Run all analyses
@@ -217,6 +233,9 @@ router.post('/:symbol', async (req, res) => {
         roe: (fundamentalAnalysis.roe.value !== undefined && fundamentalAnalysis.roe.value !== null) ? fundamentalAnalysis.roe.value : fundamentalAnalysis.roe,
         roa: (fundamentalAnalysis.roa.value !== undefined && fundamentalAnalysis.roa.value !== null) ? fundamentalAnalysis.roa.value : fundamentalAnalysis.roa,
         profitMargin: (fundamentalAnalysis.profitMargin.value !== undefined && fundamentalAnalysis.profitMargin.value !== null) ? fundamentalAnalysis.profitMargin.value : fundamentalAnalysis.profitMargin,
+        roce: fundamentalAnalysis.roce,
+        efficiency: fundamentalAnalysis.efficiency,
+        industryComparison: fundamentalAnalysis.industryComparison,
         scores: fundamentalAnalysis.scores
       },
       technical: {
@@ -267,6 +286,7 @@ router.post('/:symbol', async (req, res) => {
       },
 
       dataSources: usedSources,
+      schemaVersion: ANALYSIS_SCHEMA_VERSION,
       analyzedAt: new Date()
     };
 
@@ -286,6 +306,9 @@ router.post('/:symbol', async (req, res) => {
         roe: (fundamentalAnalysis.roe.value !== undefined && fundamentalAnalysis.roe.value !== null) ? fundamentalAnalysis.roe.value : fundamentalAnalysis.roe,
         roa: (fundamentalAnalysis.roa.value !== undefined && fundamentalAnalysis.roa.value !== null) ? fundamentalAnalysis.roa.value : fundamentalAnalysis.roa,
         profitMargin: (fundamentalAnalysis.profitMargin.value !== undefined && fundamentalAnalysis.profitMargin.value !== null) ? fundamentalAnalysis.profitMargin.value : fundamentalAnalysis.profitMargin,
+        roce: fundamentalAnalysis.roce,
+        efficiency: fundamentalAnalysis.efficiency,
+        industryComparison: fundamentalAnalysis.industryComparison,
         scores: fundamentalAnalysis.scores
       },
       technical: {
@@ -373,6 +396,12 @@ await analysis.save();
 
 res.json({
   ...stock.toObject(),
+  // Override with freshly-fetched values (the `stock` doc was read before the
+  // in-request DB update, so its name/sector/price would otherwise be stale).
+  name: stockData.name || stock.name,
+  sector: stockData.sector || stock.sector,
+  priceData: stockData.priceData || stock.priceData,
+  week52: { high: stockData.fiftyTwoWeekHigh, low: stockData.fiftyTwoWeekLow },
   priceHistory: stockData.priceHistory || [],
   analysis: responseAnalysis,
   cached: false

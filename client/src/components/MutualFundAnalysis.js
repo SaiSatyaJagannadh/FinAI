@@ -1,13 +1,17 @@
 import React from 'react';
 
+const isNum = (v) => v !== null && v !== undefined && !isNaN(v);
+const fmt = (v, d = 2) => (isNum(v) ? Number(v).toFixed(d) : 'N/A');
+
 const MutualFundAnalysis = ({ data }) => {
   if (!data) return <div>No mutual fund data available</div>;
 
-  const { score, holdingPercentile, topHolders, sentiment, totalFundsHolding, totalFundsAnalyzed, averageHoldingPercentage, maxHoldingPercentage } = data;
+  const { score, holdingPercentile, topHolders = [], sentiment, totalFundsHolding, totalFundsAnalyzed, averageHoldingPercentage, maxHoldingPercentage } = data;
 
   return (
     <div className="analysis-panel">
       <h3>Mutual Fund Conviction Analysis</h3>
+      <p className="explainer">When big funds keep adding a stock quarter after quarter, that's smart-money conviction.</p>
       <div className="metrics-grid">
         {/* Conviction Score */}
         <div className="metric-group">
@@ -39,11 +43,11 @@ const MutualFundAnalysis = ({ data }) => {
           </div>
           <div className="metric">
             <span>Average Holding:</span>
-            <span>{averageHoldingPercentage?.toFixed(2)}%</span>
+            <span>{fmt(averageHoldingPercentage)}%</span>
           </div>
           <div className="metric">
             <span>Maximum Holding:</span>
-            <span>{maxHoldingPercentage?.toFixed(2)}%</span>
+            <span>{fmt(maxHoldingPercentage)}%</span>
           </div>
         </div>
 

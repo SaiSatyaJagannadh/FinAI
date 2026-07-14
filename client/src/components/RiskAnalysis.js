@@ -1,5 +1,7 @@
 import React from 'react';
 
+const isNum = (v) => v !== null && v !== undefined && !isNaN(v);
+
 const RiskAnalysis = ({ data }) => {
   if (!data) return <div>No risk data available</div>;
 
@@ -18,6 +20,7 @@ const RiskAnalysis = ({ data }) => {
   return (
     <div className="analysis-panel">
       <h3>Risk Analysis</h3>
+      <p className="explainer">Beta above 1 means the stock swings more than the overall market.</p>
       <div className="metrics-grid">
         {/* Market Risk */}
         <div className="metric-group">
@@ -68,7 +71,7 @@ const RiskAnalysis = ({ data }) => {
           <h4>Liquidity Risk</h4>
           <div className="metric">
             <span>Avg Daily Volume:</span>
-            <span>{liquidityRisk.averageVolume.toLocaleString()}</span>
+            <span>{isNum(liquidityRisk.averageVolume) ? liquidityRisk.averageVolume.toLocaleString('en-IN') : 'N/A'}</span>
           </div>
           <div className="metric">
             <span>Bid-Ask Spread:</span>
@@ -110,7 +113,7 @@ const RiskAnalysis = ({ data }) => {
           </div>
           <div className="metric">
             <span>Market Share:</span>
-            <span>{(sectorRisk.marketShare * 100).toFixed(1)}%</span>
+            <span>{isNum(sectorRisk.marketShare) ? (sectorRisk.marketShare * 100).toFixed(1) + '%' : 'N/A'}</span>
           </div>
         </div>
 

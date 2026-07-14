@@ -1,5 +1,8 @@
 import React from 'react';
 
+const isNum = (v) => v !== null && v !== undefined && !isNaN(v);
+const fmt = (v, d = 2) => (isNum(v) ? Number(v).toFixed(d) : 'N/A');
+
 const TechnicalAnalysis = ({ data }) => {
   if (!data) return <div>No technical data available</div>;
 
@@ -11,13 +14,16 @@ const TechnicalAnalysis = ({ data }) => {
     supportResistance = { support: [], resistance: [] },
     volumeAnalysis = { trend: 'NEUTRAL', averageVolume: 0 },
     momentum = { roc10: 0, roc20: 0, signal: 'NEUTRAL' },
-
+    score,
     overallScore = 50
   } = data;
+
+  const techScore = isNum(score) ? score : overallScore;
 
   return (
     <div className="analysis-panel">
       <h3>Technical Analysis</h3>
+      <p className="explainer">RSI below 30 = fell hard recently (may be oversold); above 70 = rose hard (overbought).</p>
       <div className="metrics-grid">
         {/* Trend Indicators */}
         <div className="metric-group">
@@ -31,13 +37,13 @@ const TechnicalAnalysis = ({ data }) => {
           <div className="metric">
             <span>Price vs MA50:</span>
             <span className={movingAverages.currentPrice > movingAverages.sma50 ? 'positive' : 'negative'}>
-              {((movingAverages.currentPrice / movingAverages.sma50 - 1) * 100).toFixed(2)}%
+              {fmt((movingAverages.currentPrice / movingAverages.sma50 - 1) * 100)}%
             </span>
           </div>
           <div className="metric">
             <span>Price vs MA200:</span>
             <span className={movingAverages.currentPrice > movingAverages.sma200 ? 'positive' : 'negative'}>
-              {((movingAverages.currentPrice / movingAverages.sma200 - 1) * 100).toFixed(2)}%
+              {fmt((movingAverages.currentPrice / movingAverages.sma200 - 1) * 100)}%
             </span>
           </div>
           <div className="metric">
@@ -119,7 +125,7 @@ const TechnicalAnalysis = ({ data }) => {
           </div>
           <div className="metric">
             <span>Avg Volume:</span>
-            <span>{volumeAnalysis.averageVolume.toLocaleString()}</span>
+            <span>{isNum(volumeAnalysis.averageVolume) ? volumeAnalysis.averageVolume.toLocaleString('en-IN') : 'N/A'}</span>
           </div>
         </div>
 
@@ -145,8 +151,8 @@ const TechnicalAnalysis = ({ data }) => {
           <h4>Overall Technical Score</h4>
           <div className="metric">
             <span>Score:</span>
-            <span className={overallScore >= 70 ? 'positive' : overallScore >= 40 ? 'neutral' : 'negative'}>
-              {overallScore}/100
+            <span className={techScore >= 70 ? 'positive' : techScore >= 40 ? 'neutral' : 'negative'}>
+              {techScore}/100
             </span>
           </div>
         </div>

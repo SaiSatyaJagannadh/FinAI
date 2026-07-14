@@ -7,32 +7,9 @@ const analysisSchema = new mongoose.Schema({
     ref: 'Stock',
     required: true
   },
-  // Fundamental Analysis
-  fundamental: {
-    peRatio: {
-      trailing: Number,
-      forward: Number,
-      score: Number, // 0-100
-      interpretation: String
-    },
-    pegRatio: {
-      value: Number,
-      score: Number, // 0-100
-      interpretation: String
-    },
-    priceToBook: Number,
-    debtToEquity: Number,
-    currentRatio: Number,
-    roe: Number, // Return on Equity
-    roa: Number, // Return on Assets
-    profitMargin: Number,
-    scores: {
-      valuation: Number, // 0-100
-      profitability: Number, // 0-100
-      financialHealth: Number, // 0-100
-      growth: Number // 0-100
-    }
-  },
+  // Fundamental Analysis (Mixed: shape evolves with the analysis services,
+  // and the 1-hour cache path serves this doc back to the frontend as-is)
+  fundamental: { type: mongoose.Schema.Types.Mixed },
   // Technical Analysis
   technical: {
     rsi: Number,
@@ -76,25 +53,8 @@ const analysisSchema = new mongoose.Schema({
     averageHoldingPercentage: Number,
     maxHoldingPercentage: Number
   },
-  // Growth Analysis
-  growth: {
-    revenueGrowth: {
-      qoq: Number,
-      yoy: Number,
-      score: Number
-    },
-    profitGrowth: {
-      qoq: Number,
-      yoy: Number,
-      score: Number
-    },
-    epsGrowth: {
-      qoq: Number,
-      yoy: Number,
-      score: Number
-    },
-    score: Number // 0-100
-  },
+  // Growth Analysis (Mixed: carries quarterly trend data alongside the scores)
+  growth: { type: mongoose.Schema.Types.Mixed },
   // Risk Analysis
   risk: {
     beta: Number,
@@ -137,6 +97,7 @@ const analysisSchema = new mongoose.Schema({
     default: Date.now
   },
   dataSources: [String], // Which APIs/data sources were used
+  schemaVersion: Number, // Bumped when analysis output shape changes (cache invalidation)
   notes: String
 }, {
   timestamps: true

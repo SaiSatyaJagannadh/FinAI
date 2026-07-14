@@ -11,7 +11,10 @@ const GrowthAnalysisService = {
         profitGrowth: this._analyzeProfitGrowth(stockData),
         epsGrowth: this._analyzeEPSGrowth(stockData),
         bookValueGrowth: this._analyzeBookValueGrowth(stockData),
-        dividendGrowth: this._analyzeDividendGrowth(stockData)
+        dividendGrowth: this._analyzeDividendGrowth(stockData),
+        // Operating profit excludes Other Income → clean of one-off gains
+        operatingProfitGrowth: this._analyzeSimpleYoY(stockData.operatingProfitGrowth),
+        pbtGrowth: this._analyzeSimpleYoY(stockData.pbtGrowth)
       };
 
       // Calculate overall growth score
@@ -34,6 +37,9 @@ const GrowthAnalysisService = {
 
       // Add growth projections based on management guidance
       growth.projections = this._calculateGrowthProjections(stockData);
+
+      // Quarterly results trend (from Screener) with warning flags
+      growth.quarterly = this._analyzeQuarterly(stockData.quarterly);
 
       return growth;
     } catch (error) {
@@ -118,6 +124,39 @@ const GrowthAnalysisService = {
   },
 
   /**
+   * Score a YoY-only growth series (operating profit, PBT)
+   */
+  _analyzeSimpleYoY: function(g) {
+    const yoy = g?.yoy || 0;
+    return {
+      yoy: parseFloat(yoy.toFixed(2)),
+      score: this._calculateGrowthScore(0, yoy, 'yoy_only'),
+      trend: yoy > 0 ? 'GROWING' : yoy < 0 ? 'DECLINING' : 'FLAT'
+    };
+  },
+
+  /**
+   * Quarterly results trend: pass the series through for charting and add
+   * warning flags (consecutive declining quarters, seasonality-aware YoY).
+   */
+  _analyzeQuarterly: function(q) {
+    if (!q || !q.sales || !q.sales.length) return null;
+
+    const warnings = [];
+    if (q.decliningSalesQuarters >= 2) {
+      warnings.push(`Sales declined ${q.decliningSalesQuarters} quarters in a row`);
+    }
+    if (q.decliningProfitQuarters >= 2) {
+      warnings.push(`Net profit declined ${q.decliningProfitQuarters} quarters in a row`);
+    }
+    if (q.salesYoYQuarter !== null && q.salesYoYQuarter < 0) {
+      warnings.push(`Latest quarter sales down ${Math.abs(q.salesYoYQuarter)}% vs same quarter last year`);
+    }
+
+    return { ...q, warnings };
+  },
+
+  /**
    * Calculate growth score based on QoQ and YoY growth
    */
   _calculateGrowthScore: function(qoqGrowth, yoyGrowth, growthType) {
@@ -175,7 +214,7 @@ const GrowthAnalysisService = {
    * Calculate future growth projections based on management guidance
    */
   _calculateGrowthProjections: function(stockData) {
-    const currentEPS = stockData.eps || 0;
+    const currentEPS = stockData.eps || stockData.fundamental?.eps || 0;
     const currentRevenue = stockData.revenue || 0;
     const guidance = stockData.managementGuidance || {};
 
@@ -211,7 +250,7 @@ const GrowthAnalysisService = {
       revenue: {
         current: currentRevenue,
         projected1Y: currentRevenue * (1 + histRevenueGrowth / 100),
-        projected2Y: currentRevenue * Math.pow(1 + (guidance.revenueGrowthNextYear || 0) / 100, 2),
+        projected2Y: currentRevenue * Math.pow(1 + histRevenueGrowth / 100, 2),
         cagr: histRevenueGrowth
       }
     };

@@ -15,6 +15,11 @@ class FundamentalAnalysisService {
       'FMCG': { peRange: [20, 40], pegTarget: [0.8, 1.8], debtToEquityMax: 0.3 },
       'Auto': { peRange: [10, 20], pegTarget: [0.7, 1.3], debtToEquityMax: 0.5 },
       'Energy': { peRange: [8, 15], pegTarget: [0.6, 1.2], debtToEquityMax: 0.4 },
+      'Telecom': { peRange: [15, 35], pegTarget: [0.8, 1.6], debtToEquityMax: 1.5 },
+      'Construction': { peRange: [12, 25], pegTarget: [0.7, 1.4], debtToEquityMax: 1.0 },
+      'Metals': { peRange: [6, 18], pegTarget: [0.5, 1.2], debtToEquityMax: 0.8 },
+      'Chemicals': { peRange: [15, 30], pegTarget: [0.8, 1.5], debtToEquityMax: 0.5 },
+      'Industrials': { peRange: [15, 35], pegTarget: [0.8, 1.6], debtToEquityMax: 0.6 },
       'default': { peRange: [10, 25], pegTarget: [0.7, 1.5], debtToEquityMax: 0.5 }
     };
   }
@@ -34,13 +39,16 @@ class FundamentalAnalysisService {
         currentRatio: this._analyzeCurrentRatio(stockData),
         roe: this._analyzeROE(stockData),
         roa: this._analyzeROA(stockData),
-        profitMargin: this._analyzeProfitMargin(stockData)
+        profitMargin: this._analyzeProfitMargin(stockData),
+        roce: this._analyzeROCE(stockData),
+        efficiency: this._analyzeEfficiency(stockData)
       };
+      fundamentals.industryComparison = this._compareToIndustry(stockData, fundamentals);
 
       // Calculate category scores
       const scores = {
         valuation: this._calculateValuationScore(fundamentals.peRatio.score, fundamentals.pegRatio.score),
-        profitability: this._calculateProfitabilityScore(fundamentals.roe.score, fundamentals.roa.score, fundamentals.profitMargin.score),
+        profitability: this._calculateProfitabilityScore(fundamentals.roe.score, fundamentals.roa.score, fundamentals.profitMargin.score, fundamentals.roce.score),
         financialHealth: this._calculateFinancialHealthScore(fundamentals.debtToEquity.score, fundamentals.currentRatio.score),
         growth: this._calculateGrowthScore(stockData) // This would come from growth analysis
       };
@@ -60,6 +68,9 @@ class FundamentalAnalysisService {
         roe: fundamentals.roe,
         roa: fundamentals.roa,
         profitMargin: fundamentals.profitMargin,
+        roce: fundamentals.roce,
+        efficiency: fundamentals.efficiency,
+        industryComparison: fundamentals.industryComparison,
         scores: {
           valuation: Math.round(scores.valuation),
           profitability: Math.round(scores.profitability),
@@ -370,6 +381,77 @@ class FundamentalAnalysisService {
   }
 
   /**
+   * Compare the stock's key ratios to its sector's typical ranges so the UI
+   * can say "P/E 17.3 vs FMCG range 20–40 → cheaper than peers".
+   */
+  _compareToIndustry(stockData, fundamentals) {
+    const sector = stockData.sector || 'default';
+    const b = this.sectorBenchmarks[sector] || this.sectorBenchmarks.default;
+    const pe = fundamentals.peRatio.trailing || 0;
+    const de = fundamentals.debtToEquity.value || 0;
+    const peg = fundamentals.pegRatio.value || 0;
+
+    const peVerdict = !pe ? 'NO_DATA'
+      : pe < b.peRange[0] ? 'CHEAPER_THAN_SECTOR'
+      : pe <= b.peRange[1] ? 'IN_LINE_WITH_SECTOR'
+      : 'PRICIER_THAN_SECTOR';
+
+    return {
+      sector,
+      peRatio: { value: pe, sectorRange: b.peRange, verdict: peVerdict },
+      pegRatio: { value: peg, sectorTarget: b.pegTarget },
+      debtToEquity: {
+        value: de,
+        sectorMax: b.debtToEquityMax,
+        verdict: de <= b.debtToEquityMax ? 'HEALTHY_FOR_SECTOR' : 'HIGH_FOR_SECTOR'
+      }
+    };
+  }
+
+  /**
+   * Analyze Return on Capital Employed (ROCE)
+   */
+  _analyzeROCE(stockData) {
+    const roce = stockData.roce || 0;
+
+    let score = 50;
+    let interpretation = 'ROCE data unavailable';
+
+    if (roce > 0) {
+      if (roce >= 25) {
+        score = 90;
+        interpretation = 'Excellent capital efficiency';
+      } else if (roce >= 18) {
+        score = 80;
+        interpretation = 'Very good capital efficiency';
+      } else if (roce >= 12) {
+        score = 60;
+        interpretation = 'Good capital efficiency';
+      } else if (roce >= 8) {
+        score = 40;
+        interpretation = 'Moderate capital efficiency';
+      } else {
+        score = 25;
+        interpretation = 'Low return on capital employed';
+      }
+    }
+
+    return { value: roce, score, interpretation };
+  }
+
+  /**
+   * Working-capital efficiency (debtor days / cash conversion cycle)
+   */
+  _analyzeEfficiency(stockData) {
+    const e = stockData.efficiency || {};
+    return {
+      debtorDays: e.debtorDays ?? null,
+      cashConversionCycle: e.cashConversionCycle ?? null,
+      workingCapitalDays: e.workingCapitalDays ?? null
+    };
+  }
+
+  /**
    * Calculate valuation score based on PE and PEG
    */
   _calculateValuationScore(peScore, pegScore) {
@@ -379,8 +461,8 @@ class FundamentalAnalysisService {
   /**
    * Calculate profitability score based on ROE, ROA, and profit margin
    */
-  _calculateProfitabilityScore(roeScore, roaScore, marginScore) {
-    return (roeScore * 0.4) + (roaScore * 0.3) + (marginScore * 0.3);
+  _calculateProfitabilityScore(roeScore, roaScore, marginScore, roceScore) {
+    return (roeScore * 0.3) + (roaScore * 0.25) + (marginScore * 0.25) + (roceScore * 0.2);
   }
 
   /**

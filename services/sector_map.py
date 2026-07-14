@@ -59,6 +59,19 @@ _SECTOR_ALIASES = {
         "infra", "infrastructure", "infrastructure & construction",
         "cement & construction", "cement", "engineering",
     ],
+    "Metals": [
+        "metals", "metal", "metals & mining", "mining", "steel", "iron & steel",
+        "aluminium", "aluminum", "metal fabrication", "non ferrous metals",
+        "basic materials",
+    ],
+    "Chemicals": [
+        "chemicals", "chemical", "specialty chemicals", "speciality chemicals",
+        "fertilizers", "fertilisers", "agrochemicals", "commodity chemicals",
+    ],
+    "Industrials": [
+        "industrials", "industrial", "capital goods", "industrial products",
+        "manufacturing", "machinery", "electrical equipment", "conglomerates",
+    ],
 }
 
 
