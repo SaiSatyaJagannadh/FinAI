@@ -1,227 +1,66 @@
-# FinAI - Financial Stock Analysis Platform
+# CLAUDE.md
 
-A full-stack stock analysis application that fetches real stock data and provides AI-powered analysis including fundamental, technical, growth, risk, and mutual fund conviction metrics.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Structure
-
-```
-FinAI/
-├── client/                    # React frontend
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── AnalysisResults.js      # Main results container with tabs
-│   │   │   ├── GoogleFinanceOverview.js # Google Finance-style stock overview (NEW)
-│   │   │   ├── FundamentalAnalysis.js
-│   │   │   ├── TechnicalAnalysis.js
-│   │   │   ├── GrowthAnalysis.js
-│   │   │   ├── RiskAnalysis.js
-│   │   │   ├── MutualFundAnalysis.js
-│   │   │   ├── RecommendationCard.js
-│   │   │   └── StockSearchForm.js
-│   │   └── pages/
-│   │       ├── StockSearch.js         # Main search page
-│   │       ├── Analysis.js            # Analysis history (placeholder)
-│   │       ├── Portfolio.js           # Portfolio (placeholder)
-│   │       └── Watchlist.js           # Watchlist (placeholder)
-│   └── package.json
-├── server/                   # Express.js backend
-│   ├── routes/
-│   │   ├── analysisRoutes.js         # Stock analysis endpoint
-│   │   ├── stockRoutes.js            # Stock info endpoints
-│   │   └── portfolioRoutes.js       # Portfolio endpoints
-│   ├── services/
-│   │   ├── fundamentalAnalysis.js    # P/E, ROE, debt ratios analysis
-│   │   ├── technicalAnalysis.js      # RSI, MACD, moving averages
-│   │   ├── growthAnalysis.js         # Revenue, profit growth metrics
-│   │   ├── riskAnalysis.js           # Beta, volatility, drawdown
-│   │   └── mutualFundAnalysis.js    # MF conviction data
-│   ├── models/
-│   │   ├── Stock.js                  # Stock schema
-│   │   ├── Analysis.js               # Analysis results schema
-│   │   └── Portfolio.js             # Portfolio schema
-│   ├── server.js                     # Express app entry
-│   └── .env                          # Environment config
-├── services/
-│   └── stockDataService.py           # Python yfinance data fetcher
-├── .venv/                     # Python virtual environment
-├── requirements.txt            # Python dependencies
-└── package.json
-```
-
-## Tech Stack
-
-- **Frontend**: React, React Router, Axios
-- **Backend**: Node.js, Express.js
-- **Database**: MongoDB (via Mongoose)
-- **Stock Data**: yfinance (Yahoo Finance API) + Python
-- **Styling**: Custom CSS (Google Finance-inspired)
-
-## Getting Started
-
-### Prerequisites
-```bash
-# Node.js and npm
-node --version  # v18+
-
-# Python 3.11+ with virtual environment
-python3 --version
-
-# MongoDB (local or Atlas)
-```
-
-### Installation
+## Commands
 
 ```bash
-# 1. Install Python dependencies
-source .venv/bin/activate
-pip install yfinance pandas numpy
+# Install everything (from repo root)
+npm install && npm install --prefix client
+python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 
-# 2. Install Node dependencies
-cd server && npm install
-cd ../client && npm install
+# Run both server (port 5000) and client (port 3000) together
+npm run dev
+
+# Run individually
+npm run server        # nodemon server/server.js
+npm run client        # react-scripts start (client/)
+npm start             # node server/server.js (no reload — prod-style)
+
+# Tests
+npm test              # jest — no test suite exists yet (tests/ is empty); this currently finds nothing to run
+
+# Build client for production (server serves the built files in prod)
+npm run client:build
+
+# Exercise the Python data layer directly, bypassing Node (fastest way to debug bad numbers)
+.venv/bin/python3 services/stockDataService.py INFY --exchange NSE --period 1y --json
+.venv/bin/python3 services/screenerService.py INFY --json
 ```
 
-### Running the Application
-
-```bash
-# Terminal 1: Start MongoDB (if local)
-mongod
-
-# Terminal 2: Start server
-cd server && npm start
-# Server runs on http://localhost:5000
-
-# Terminal 3: Start client (in separate terminal)
-cd client && npm start
-# Client runs on http://localhost:3000
-```
-
-### Environment Variables
-
-Create `server/.env`:
-```
-MONGODB_URI=mongodb://localhost:27017/financialai
-PORT=5000
-NODE_ENV=development
-# Optionally add API keys for premium data sources
-# GEMINI_API_KEY=your_key
-# OPENAI_API_KEY=your_key
-```
+There is no lint script configured. `client/` uses CRA defaults (`react-scripts test`, `eslintConfig: react-app` in `client/package.json`) but nothing is wired at the root.
 
 ## Architecture
 
-### Stock Data Flow
+### Two-language pipeline, one request
 
-1. **User searches stock** → React frontend calls `/api/analysis/:symbol`
-2. **Node.js calls Python** → `stockDataService.py` using child_process
-3. **Python fetches from Yahoo Finance** → yfinance returns real price data
-4. **Analysis services process data** → Fundamental, Technical, Growth, Risk, MF
-5. **Results saved to MongoDB** → Cached for 1 hour
-6. **Response sent to frontend** → Rendered in GoogleFinanceOverview
+A single `POST /api/analysis/:symbol` call fans out across Python and Node:
 
-### Key Files
+1. **`server/routes/analysisRoutes.js`** shells out via `child_process.exec` to `services/stockDataService.py` (yfinance) to get price data, valuation fields, growth, and 1y price history for the symbol (NSE symbols are mapped to `SYMBOL.NS` via `NSE_SYMBOL_MAP`, else auto-suffixed).
+2. If that succeeds, it **also** shells out to `services/screenerService.py`, which scrapes Screener.in for Indian-specific fundamentals and shareholding (promoter/FII/DII/MF %). This is a best-effort enrichment step: `screenerService.py` scrapes live HTML (matched against Screener's current page structure — id-based `<section>` blocks like `#top-ratios`, `#profit-loss`, `#balance-sheet`, `#shareholding`, not the older HTML-comment markers), and returns `{success:false}` on any failure. The Node side only overwrites yfinance's values with the truthy Screener fields it gets back (`analysisRoutes.js` lines ~130–145) — it never hard-fails the request. `screenerShareholding` (promoter/FII/DII/MF percentages) is the *only* real source for the Mutual Fund Conviction tab; without a successful scrape, that tab falls back to a hardcoded default (`mutualFundAnalysis.analyzeConvictionStockSymbol(symbol, [])`).
+3. If yfinance itself fails, `_generateMockStockData()` (bottom of `analysisRoutes.js`) fabricates a deterministic-per-symbol dataset (seeded PRNG from the symbol's char codes) so the UI never sees a hard error — check `dataSources` in the response to know if you're looking at `YAHOO_FINANCE`(+`SCREENER_IN`) or `SIMULATED_DATA`.
+4. The merged `stockData` object is fanned out in parallel to five independent scoring services in `server/services/`: `fundamentalAnalysis.js`, `technicalAnalysis.js`, `mutualFundAnalysis.js`, `growthAnalysis.js`, `riskAnalysis.js`. Each returns its own 0–100 `overallScore` plus sub-metric detail; `_calculateRecommendation()` combines them with fixed weights (fundamental 25%, technical 20%, mutualFund 15%, growth 25%, risk 15% inverted) into the final BUY/HOLD/SELL.
+5. Result is cached in MongoDB (`Analysis` model) for 1 hour per stock unless `forceRefresh: true` is passed; `Stock.findOrCreate` means any typed symbol is analyzable without a DB seed step.
 
-- **`server/routes/analysisRoutes.js`** - Main analysis orchestration
-- **`services/stockDataService.py`** - Real stock data from Yahoo Finance
-- **`client/src/components/GoogleFinanceOverview.js`** - Google Finance-style UI
+### The stockData shape is the load-bearing contract
 
-### Analysis Components
+Because the pipeline crosses a Python→JSON→Node boundary and then a Screener-scrape merge on top of that, **field paths are easy to get wrong silently** — a wrong path just reads `undefined`/`0` and produces a plausible-looking but meaningless score instead of an error. When touching any analysis service, verify the exact key path against what `stockDataService.py`'s `fetch_stock_data()` actually emits:
 
-| Service | Purpose | Key Metrics |
-|----------|---------|-------------|
-| FundamentalAnalysis | Valuation & Health | P/E, P/B, ROE, ROA, Debt/Equity, Current Ratio |
-| TechnicalAnalysis | Price Trends | RSI, MACD, Moving Averages, Bollinger Bands |
-| GrowthAnalysis | Growth Rates | Revenue YoY, Profit YoY, EPS Growth |
-| RiskAnalysis | Risk Assessment | Beta, Volatility, Drawdown |
-| MutualFundAnalysis | MF Conviction | Top holders, holding changes |
+- Valuation fields (PE, forward PE, PB, dividend yield, EPS, book value) live under `stockData.fundamental.*` — **not** `stockData.priceData.*` (priceData only has current/open/high/low/volume/marketCap).
+- ROE, ROA, profit/operating margin, debt-to-equity, current/quick ratio, beta, volatility are **top-level** on `stockData` (not nested).
+- `debtToEquity` from yfinance is emitted as a ratio (Python divides `info['debtToEquity']` by 100 before returning, since yfinance's raw value is a percentage-like number, e.g. raw `9.8` → `0.098`). If a sector benchmark check on debt starts looking absurd, check this unit conversion first.
+- Growth fields (`revenueGrowth`, `profitGrowth`, `epsGrowth`, `bookValueGrowth`, `dividendGrowth`) are `{yoy, qoq}` objects, top-level.
+- `mutualFundAnalysis.buildFromShareholding()` expects `{percentages, qoqChanges}` each keyed `promoter/fii/dii/mf/others` — this is Screener-only data, yfinance has no equivalent.
+- Frontend components (e.g. `MutualFundAnalysis.js`) read `holder.changeLastQuarter`, not `holder.change` — the two mutual-fund code paths (`analyzeConvictionStockSymbol` for mock data vs `buildFromShareholding` for real data) don't share a holder shape 1:1, so check both when the MF tab looks wrong.
 
-## API Endpoints
+If a whole analysis tab (Fundamental/Technical/MF/etc.) looks uniformly wrong or default-ish rather than just off-by-some-amount, suspect a field-path mismatch like the above before suspecting the scoring logic itself.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/analysis/:symbol` | Analyze a stock (fetches data + all metrics) |
-| GET | `/api/stocks/:symbol` | Get stock info from DB |
-| POST | `/api/stocks/batch` | Get multiple stocks |
-| GET | `/api/analysis/:symbol/history` | Get analysis history |
-| GET | `/api/health` | Health check |
+### Deployment
 
-### Example Request
-```javascript
-POST /api/analysis/RELIANCE
-Body: { "exchange": "NSE", "forceRefresh": true }
-```
+Single Docker service on Render (`render.yaml` + `Dockerfile`): Node installs `server/` and `client/` deps, builds the React app, and `server.js` serves the static build in production — there's no separate frontend host. Python deps for the deployed image come from the trimmed `requirements-deploy.txt` (yfinance + requests + bs4 + lxml only), not the full dev `requirements.txt`. MongoDB is Atlas in production (`MONGODB_URI` set as a Render env var, Atlas Network Access must allow `0.0.0.0/0`); locally it defaults to `mongodb://localhost:27017/financialai`. `PROJECT_ROOT` and `PYTHON_BIN` env vars let `analysisRoutes.js` find the Python scripts/interpreter when the working directory differs from repo root in deployment (see the path resolution at the top of `analysisRoutes.js`).
 
-### Example Response
-```json
-{
-  "symbol": "RELIANCE",
-  "priceData": { "current": 2792.50, "change": 15.20 },
-  "analysis": {
-    "fundamental": { "peRatio": {...}, "roe": {...} },
-    "technical": { "rsi": {...}, "macd": {...} },
-    "overall": {
-      "weightedScore": 72,
-      "recommendation": { "action": "BUY", "confidence": "MEDIUM" }
-    },
-    "dataSources": ["YAHOO_FINANCE"]
-  }
-}
-```
+### Other things worth knowing
 
-## NSE Symbol Mapping
-
-The Python service automatically maps NSE symbols to Yahoo Finance format:
-
-```python
-NSE_SYMBOL_MAP = {
-    'RELIANCE': 'RELIANCE.NS',
-    'TCS': 'TCS.NS',
-    'INFY': 'INFY.NS',
-    # ... etc
-}
-# Default: symbol.NS for unmapped symbols
-```
-
-**Important**: If a stock shows ₹0 or no data, check:
-1. yfinance is installed: `.venv/bin/python3 -c "import yfinance"`
-2. Symbol is correctly mapped in NSE_SYMBOL_MAP
-3. Yahoo Finance returns data for that symbol
-
-## Troubleshooting
-
-### Stock data shows ₹0
-```bash
-# Test yfinance directly
-.venv/bin/python3 -c "
-import yfinance as yf
-t = yf.Ticker('INFY.NS')
-print('Price:', t.info.get('currentPrice') or t.info.get('regularMarketPrice'))
-print('Hist:', t.history(period='5d').tail(1))
-"
-
-# Test service
-.venv/bin/python3 services/stockDataService.py INFY --json
-```
-
-### MongoDB connection issues
-```bash
-# Check MongoDB is running
-pgrep -l mongo
-# Or use Atlas connection string in .env
-```
-
-### Python path issues (Error: getcwd)
-```
-shell-init: error retrieving current directory: getcwd: cannot access parent directories
-```
-Run the Node server from the FinAI root directory, not a subdirectory.
-
-## Future Improvements
-
-- [ ] Add TradingView lightweight-charts for real price charts
-- [ ] Implement portfolio tracking with P&L calculations
-- [ ] Add more stock symbol mappings for BSE/NSE
-- [ ] Add historical chart with candlestick data
-- [ ] Implement watchlist with alerts
-- [ ] Add more data sources (Alpha Vantage, Twelvedata)
-- [ ] Real-time price updates via WebSocket
+- `PROJECT_SPEC.md` is the original product-vision doc (which analysis factors matter and why); useful context for *why* a metric is scored the way it is, but it describes aspirational scope (option chains, Twitter sentiment, taxation planning) well beyond what's implemented.
+- `GEMINI_API_KEY` / `OPENAI_API_KEY` are present in `server/.env` but not read anywhere in the codebase — no LLM calls are wired up despite the "AI" branding.
+- Stray root-level files not part of the real app: `server_test.js`, `debug_infy.py`, `my_notes`, `runcode`, `run_all.sh` — leftover scratch/debug files, not part of `npm run dev`/Docker paths.
