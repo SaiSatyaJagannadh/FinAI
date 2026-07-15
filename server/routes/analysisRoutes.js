@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const path = require('path');
 const os = require('os');
 const Stock = require('../models/Stock');
@@ -27,10 +27,10 @@ const ANALYSIS_SCHEMA_VERSION = 3;
  */
 async function fetchRealStockData(symbol, exchange = 'NSE') {
   return new Promise((resolve, reject) => {
-    // Use absolute paths to avoid working directory issues
-    const cmd = `"${PYTHON_BIN}" "${STOCK_DATA_SERVICE}" "${symbol}" --exchange ${exchange} --period 1y --json`;
+    // execFile (no shell) — user-supplied symbol/exchange must never hit a shell string
+    const args = [STOCK_DATA_SERVICE, symbol, '--exchange', exchange, '--period', '1y', '--json'];
 
-    exec(cmd, { cwd: PROJECT_ROOT }, (error, stdout, stderr) => {
+    execFile(PYTHON_BIN, args, { cwd: PROJECT_ROOT }, (error, stdout, stderr) => {
       // More detailed error logging
       if (error) {
         console.error('Stock data fetch error:', error.message);
@@ -61,8 +61,7 @@ async function fetchRealStockData(symbol, exchange = 'NSE') {
  */
 async function fetchScreenerData(symbol) {
   return new Promise((resolve) => {
-    const cmd = `"${PYTHON_BIN}" "${SCREENER_SERVICE}" "${symbol}" --json`;
-    exec(cmd, { cwd: PROJECT_ROOT }, (error, stdout) => {
+    execFile(PYTHON_BIN, [SCREENER_SERVICE, symbol, '--json'], { cwd: PROJECT_ROOT }, (error, stdout) => {
       if (error) {
         console.error('Screener fetch error:', error.message.split('\n')[0]);
         return resolve(null);
@@ -83,6 +82,10 @@ router.post('/:symbol', async (req, res) => {
     const { symbol } = req.params;
     const { exchange = 'NSE', depth = 'standard' } = req.body;
     const forceRefresh = req.body.forceRefresh || false;
+
+    if (!/^[A-Z0-9.&-]{1,20}$/i.test(symbol) || !/^[A-Z]{2,10}$/i.test(exchange)) {
+      return res.status(400).json({ message: 'Invalid symbol or exchange' });
+    }
 
     // Find or create stock — do NOT gate analysis on prior DB presence.
     // Any symbol the user types should be analyzable (real data fetched below).
