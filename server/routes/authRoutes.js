@@ -44,6 +44,42 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// POST /api/auth/register
+router.post('/register', async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (typeof username !== 'string' || !/^[a-z0-9_.-]{3,30}$/i.test(username)) {
+      return res.status(400).json({ message: 'Username must be 3-30 characters: letters, numbers, _ . -' });
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+
+    const normalized = username.toLowerCase().trim();
+    if (await User.findOne({ username: normalized })) {
+      return res.status(409).json({ message: 'Username is already taken' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    let user;
+    try {
+      user = await User.create({ username: normalized, passwordHash });
+    } catch (err) {
+      if (err.code === 11000) {
+        // Lost the race between findOne and create
+        return res.status(409).json({ message: 'Username is already taken' });
+      }
+      throw err;
+    }
+
+    const token = jwt.sign({ sub: user._id.toString(), username: user.username }, JWT_SECRET, { expiresIn: '12h' });
+    res.status(201).json({ token, username: user.username });
+  } catch (err) {
+    console.error('Register error:', err.message);
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
 // Middleware: require a valid Bearer token
 function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';
