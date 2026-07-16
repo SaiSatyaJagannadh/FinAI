@@ -47,15 +47,16 @@ def run_analyses(stock_data, shareholding, sym):
     node = shutil.which("node")
     if not node:
         return None
-    out = subprocess.run(
-        [node, str(ROOT / "server" / "services" / "analysisRunner.js")],
-        input=json.dumps({"stockData": stock_data, "screenerShareholding": shareholding, "symbol": sym}),
-        capture_output=True, text=True, timeout=60, cwd=ROOT,
-    )
     try:
+        out = subprocess.run(
+            [node, str(ROOT / "server" / "services" / "analysisRunner.js")],
+            input=json.dumps({"stockData": stock_data, "screenerShareholding": shareholding, "symbol": sym}),
+            capture_output=True, text=True, timeout=60, cwd=ROOT,
+        )
         result = json.loads(out.stdout)
         return None if "error" in result else result
-    except json.JSONDecodeError:
+    except Exception:
+        # any failure (timeout, bad JSON, node crash) degrades to the raw-data view
         return None
 
 
@@ -76,14 +77,13 @@ if st.button("Analyze", type="primary") and symbol:
     price = data.get("priceData", {})
     cur = "₹" if exchange in ("NSE", "BSE") else "$"
 
-    # --- Screener.in enrichment for Indian stocks: the same merge analysisRoutes.js
-    # does (lines ~145-160). yfinance ratios can be stale/wrong; Screener wins when truthy.
-    sc = {}
-    if exchange in ("NSE", "BSE"):
-        try:
-            sc = fetch("screenerService.py", [symbol])
-        except Exception:
-            sc = {}
+    # --- Screener.in enrichment: the same merge analysisRoutes.js does (lines ~145-160).
+    # Unconditional like the route (Screener 404s on non-Indian symbols -> sc stays {}).
+    # yfinance ratios can be stale/wrong; Screener wins when truthy.
+    try:
+        sc = fetch("screenerService.py", [symbol])
+    except Exception:
+        sc = {}
     fund = data.setdefault("fundamental", {})
     for k in ("peRatio", "pbRatio", "dividendYield", "eps", "bookValue"):
         if (sc.get("fundamental") or {}).get(k):
