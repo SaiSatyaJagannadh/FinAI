@@ -17,7 +17,9 @@ lxml>=5.0.0
 
 # Optional technical-analysis helpers
 #   • TA-Lib (requires the C library libta-lib to be installed on the host)
-ta-lib>=0.4.24
+#     Commented out: nothing imports it, and Streamlit Cloud installs this file —
+#     a missing wheel would fail the whole deploy. Uncomment locally if needed.
+# ta-lib>=0.4.24
 #   • Pure-Python alternative (uncomment if you prefer no C extension)
 # pandas-ta>=0.3.14b0
 

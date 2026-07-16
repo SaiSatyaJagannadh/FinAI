@@ -20,18 +20,25 @@ exchange = col2.selectbox("Exchange", ["NSE", "BSE", "US"])
 
 @st.cache_data(ttl=3600, show_spinner="Fetching data...")
 def fetch(script, args):
-    # one retry: Yahoo intermittently 429s cloud IPs
+    # Retry once (Yahoo intermittently 429s cloud IPs). Failures raise instead of
+    # returning, so st.cache_data never caches a transient failure for the full TTL.
+    data = None
     for attempt in (1, 2):
         out = subprocess.run(
             [PY, str(ROOT / "services" / script), *args, "--json"],
             capture_output=True, text=True, timeout=120, cwd=ROOT,
         )
         try:
-            return json.loads(out.stdout)
+            data = json.loads(out.stdout)
         except json.JSONDecodeError:
-            if attempt == 2:
-                raise RuntimeError(out.stderr.strip()[-300:] or "empty response from data service")
+            data = None
+        if data and data.get("success", True):
+            return data
+        if attempt == 1:
             time.sleep(2)
+    raise RuntimeError(
+        (data or {}).get("error") or out.stderr.strip()[-300:] or "empty response from data service"
+    )
 
 
 if st.button("Analyze", type="primary") and symbol:
@@ -41,13 +48,24 @@ if st.button("Analyze", type="primary") and symbol:
         st.error(f"Failed to fetch data: {e}")
         st.stop()
 
-    if not data.get("success", True):
-        st.error(data.get("error", "No data returned for this symbol."))
-        st.stop()
-
     price = data.get("priceData", {})
     fund = data.get("fundamental", {})
     cur = "₹" if exchange in ("NSE", "BSE") else "$"
+
+    # Screener.in overlay for Indian stocks — same merge analysisRoutes.js does.
+    # yfinance ratios can be stale/wrong (e.g. DIXON book value); Screener wins when truthy.
+    sc = {}
+    if exchange in ("NSE", "BSE"):
+        try:
+            sc = fetch("screenerService.py", [symbol])
+        except Exception:
+            sc = {}
+    for k, v in (sc.get("fundamental") or {}).items():
+        if v:
+            fund[k] = v
+    for k in ("roe", "debtToEquity", "profitMargin", "operatingMargin"):
+        if sc.get(k):
+            data[k] = sc[k]
 
     m = st.columns(5)
     m[0].metric("Price", f"{cur}{price.get('current', 0):,.2f}",
@@ -61,8 +79,9 @@ if st.button("Analyze", type="primary") and symbol:
     hist = data.get("priceHistory", [])
     if hist:
         df = pd.DataFrame(hist)
-        # utc=True: US history spans a DST switch, giving mixed offsets that raise in pandas 2.x
-        df["date"] = pd.to_datetime(df["date"], utc=True)
+        # utc=True: US history spans a DST switch, giving mixed offsets that raise in pandas 2.x;
+        # drop tz after so IST midnight bars don't label as the previous UTC day
+        df["date"] = pd.to_datetime(df["date"], utc=True).dt.tz_localize(None)
         st.subheader("1-Year Price History")
         st.line_chart(df.set_index("date")["close"])
 
@@ -82,16 +101,12 @@ if st.button("Analyze", type="primary") and symbol:
     with right:
         st.subheader("Shareholding (Screener.in)")
         if exchange in ("NSE", "BSE"):
-            try:
-                sc = fetch("screenerService.py", [symbol])
-                pct = (sc.get("shareholding") or {}).get("percentages", {}) if sc.get("success") else {}
-                pct = {k: v for k, v in pct.items() if v}
-                if pct:
-                    st.bar_chart(pd.Series(pct, name="%"))
-                else:
-                    st.info("No shareholding data available.")
-            except Exception:
-                st.info("Screener.in scrape unavailable.")
+            pct = (sc.get("shareholding") or {}).get("percentages") or {}
+            pct = {k: v for k, v in pct.items() if v}
+            if pct:
+                st.bar_chart(pd.Series(pct, name="%"))
+            else:
+                st.info("Shareholding data unavailable (Screener.in scrape failed).")
         else:
             st.info("Shareholding data is only available for Indian stocks.")
 
