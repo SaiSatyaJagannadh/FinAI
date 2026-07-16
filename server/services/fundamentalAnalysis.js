@@ -1,6 +1,3 @@
-const Stock = require('../models/Stock');
-const Analysis = require('../models/Analysis');
-
 /**
  * Fundamental Analysis Service
  * Analyzes financial ratios and fundamentals of a stock
