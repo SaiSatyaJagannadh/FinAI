@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -19,11 +20,18 @@ exchange = col2.selectbox("Exchange", ["NSE", "BSE", "US"])
 
 @st.cache_data(ttl=3600, show_spinner="Fetching data...")
 def fetch(script, args):
-    out = subprocess.run(
-        [PY, str(ROOT / "services" / script), *args, "--json"],
-        capture_output=True, text=True, timeout=120, cwd=ROOT,
-    )
-    return json.loads(out.stdout)
+    # one retry: Yahoo intermittently 429s cloud IPs
+    for attempt in (1, 2):
+        out = subprocess.run(
+            [PY, str(ROOT / "services" / script), *args, "--json"],
+            capture_output=True, text=True, timeout=120, cwd=ROOT,
+        )
+        try:
+            return json.loads(out.stdout)
+        except json.JSONDecodeError:
+            if attempt == 2:
+                raise RuntimeError(out.stderr.strip()[-300:] or "empty response from data service")
+            time.sleep(2)
 
 
 if st.button("Analyze", type="primary") and symbol:
@@ -53,7 +61,8 @@ if st.button("Analyze", type="primary") and symbol:
     hist = data.get("priceHistory", [])
     if hist:
         df = pd.DataFrame(hist)
-        df["date"] = pd.to_datetime(df["date"])
+        # utc=True: US history spans a DST switch, giving mixed offsets that raise in pandas 2.x
+        df["date"] = pd.to_datetime(df["date"], utc=True)
         st.subheader("1-Year Price History")
         st.line_chart(df.set_index("date")["close"])
 
