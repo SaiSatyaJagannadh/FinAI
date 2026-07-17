@@ -45,40 +45,62 @@ st.markdown(
 # ---------------------------------------------------------------------------
 # Auth: bcrypt-hashed users in Mongo `users`. Gates the whole analysis UI below.
 # ---------------------------------------------------------------------------
-@st.cache_resource
-def _mongo_db():
-    """Shared MongoDB handle -> the `financialai` database, or None when no
-    MongoDB is reachable (e.g. Streamlit Cloud without a MONGODB_URI secret)."""
+@st.cache_resource(show_spinner=False)
+def _mongo_client(uri):
+    """Cached live MongoClient for `uri`. RAISES (never returns) on failure so a
+    transient connect error isn't frozen by @st.cache_resource until reboot —
+    cache_resource caches return values, not exceptions, so a failed attempt is
+    retried on the next run."""
+    import pymongo
+    # 15s (not 3s): Atlas cold-start from Streamlit Cloud — SRV lookup + TLS
+    # handshake on the first connection routinely takes longer than a few seconds.
+    kwargs = {"serverSelectionTimeoutMS": 15000}
+    if uri.startswith("mongodb+srv") or "tls=true" in uri:
+        import certifi  # macOS/py bundles often lack system CAs for Atlas TLS
+        kwargs["tlsCAFile"] = certifi.where()
+    client = pymongo.MongoClient(uri, **kwargs)
+    client.admin.command("ping")  # force a real connection; raises if unreachable
+    return client
+
+
+def _resolve_uri():
     uri = os.environ.get("MONGODB_URI")
+    if uri:
+        return uri
+    try:
+        return st.secrets["MONGODB_URI"]
+    except Exception:
+        return None
+
+
+def _mongo_db():
+    """Returns (db, error). `db` is the `financialai` database or None.
+    `error` is None on success, "no-uri" when nothing is configured, else the
+    connection error text (bad password, Network Access block, timeout, ...) —
+    so callers can tell "secret missing" apart from "secret set but rejected"."""
+    uri = _resolve_uri()
     if not uri:
-        try:
-            uri = st.secrets["MONGODB_URI"]
-        except Exception:
-            uri = "mongodb://localhost:27017/financialai"
+        return None, "no-uri"
     try:
-        import pymongo
-        kwargs = {"serverSelectionTimeoutMS": 3000}
-        if uri.startswith("mongodb+srv") or "tls=true" in uri:
-            import certifi  # macOS/py bundles often lack system CAs for Atlas TLS
-            kwargs["tlsCAFile"] = certifi.where()
-        client = pymongo.MongoClient(uri, **kwargs)
-        client.admin.command("ping")
-        return client.get_database("financialai")
-    except Exception:
-        return None
+        return _mongo_client(uri).get_database("financialai"), None
+    except Exception as e:
+        _mongo_client.clear()  # drop the failed client so the next run reconnects
+        return None, str(e)
 
 
-@st.cache_resource
 def _users_collection():
-    db = _mongo_db()
+    """Returns (collection, error) — see _mongo_db for error semantics."""
+    db, err = _mongo_db()
     if db is None:
-        return None
+        return None, err
     coll = db["users"]
-    try:
-        coll.create_index("username", unique=True)
-    except Exception:
-        pass  # index may already exist / read-only role — insert still enforces it
-    return coll
+    if not st.session_state.get("_users_index_ok"):
+        try:
+            coll.create_index("username", unique=True)
+            st.session_state["_users_index_ok"] = True
+        except Exception:
+            pass  # index may already exist / read-only role — insert still enforces it
+    return coll, None
 
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_.\-]{3,30}$")
@@ -131,12 +153,20 @@ def _auth_gate():
                 del st.session_state["user"]
                 st.rerun()
         return
-    coll = _users_collection()
+    coll, err = _users_collection()
     if coll is None:
-        st.error(
-            "Login is unavailable: set the **MONGODB_URI** secret in the "
-            "Streamlit Cloud app settings (Secrets) to enable accounts."
-        )
+        if err == "no-uri":
+            st.error(
+                "Login is unavailable: set the **MONGODB_URI** secret in the "
+                "Streamlit Cloud app settings (Secrets) to enable accounts."
+            )
+        else:
+            st.error(
+                "Couldn't connect to the account database. The **MONGODB_URI** secret "
+                "is set, but Atlas rejected the connection — check that the password in "
+                "the URI is correct and that Atlas **Network Access** allows `0.0.0.0/0`."
+            )
+            st.caption(f"Details: {err}")
         st.stop()
     # Center the auth card so it reads like a product sign-in, not a raw form.
     _, mid, _ = st.columns([1, 1.6, 1])
@@ -286,13 +316,13 @@ def val(x, default=0):
     return x if x is not None else default
 
 
-@st.cache_resource
 def _projection_cache():
     """MongoDB collection `projectionCache` — one doc per symbol:exchange.
     Written on every analysis; read back as a fallback when live data is down.
     Returns None when no MongoDB is reachable (e.g. Streamlit Cloud without
-    a MONGODB_URI secret) — everything still works, just without persistence."""
-    db = _mongo_db()
+    a MONGODB_URI secret) — everything still works, just without persistence.
+    (The live client is cached in _mongo_client, so this isn't reconnecting.)"""
+    db, _ = _mongo_db()
     return db["projectionCache"] if db is not None else None
 
 
