@@ -34,3 +34,6 @@ runcode
 run_all.sh
 debug_infy.py
 server_test.js
+
+# Streamlit local secrets (contains Atlas creds — never commit)
+.streamlit/secrets.toml
