@@ -11,17 +11,19 @@ const MutualFundAnalysisService = require('../services/mutualFundAnalysis');
 const GrowthAnalysisService = require('../services/growthAnalysis');
 const RiskAnalysisService = require('../services/riskAnalysis');
 const _calculateRecommendation = require('../services/recommendation');
+const { buildProjection, buildMoat, sectorOutlook } = require('../services/projectionMoat');
 
 // Paths for Python stock data service — derived from repo layout, overridable for deployment
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.join(__dirname, '..', '..');
 const STOCK_DATA_SERVICE = path.join(PROJECT_ROOT, 'services/stockDataService.py');
 const SCREENER_SERVICE = path.join(PROJECT_ROOT, 'services/screenerService.py');
+const FINVIZ_SERVICE = path.join(PROJECT_ROOT, 'services/finvizService.py');
 const PYTHON_BIN = process.env.PYTHON_BIN || path.join(PROJECT_ROOT, '.venv/bin/python3');
 
 // Bump when the analysis output shape changes so old cached docs (missing new
 // fields like industryComparison/quarterly) are treated as stale and recomputed
 // instead of being served back with gaps. Self-healing — no manual cache purge.
-const ANALYSIS_SCHEMA_VERSION = 3;
+const ANALYSIS_SCHEMA_VERSION = 4;
 
 /**
  * Fetch real stock data from yfinance service
@@ -77,6 +79,28 @@ async function fetchScreenerData(symbol) {
   });
 }
 
+/**
+ * Fetch US analyst estimates from the FinViz scraper (analyst target,
+ * forward/5Y EPS growth). Returns null on any failure — projection scenarios
+ * just have fewer rows.
+ */
+async function fetchFinvizData(symbol) {
+  return new Promise((resolve) => {
+    execFile(PYTHON_BIN, [FINVIZ_SERVICE, symbol, '--json'], { cwd: PROJECT_ROOT }, (error, stdout) => {
+      if (error) {
+        console.error('FinViz fetch error:', error.message.split('\n')[0]);
+        return resolve(null);
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch (e) {
+        console.error('FinViz parse error:', e.message);
+        resolve(null);
+      }
+    });
+  });
+}
+
 // Comprehensive stock analysis endpoint
 router.post('/:symbol', async (req, res) => {
   try {
@@ -126,6 +150,7 @@ router.post('/:symbol', async (req, res) => {
     let isRealData = false;
     let usedSources = ['SIMULATED_DATA'];
     let screenerShareholding = null;
+    let finvizData = null;
 
     if (!stockData || !stockData.success) {
       console.log(`Could not fetch real data for ${symbolUpper}, using mock data`);
@@ -158,6 +183,13 @@ router.post('/:symbol', async (req, res) => {
         if (screener.name) stockData.name = screener.name;
         if (screener.sector) stockData.sector = screener.sector;
         screenerShareholding = screener.shareholding || null;
+      }
+
+      // --- FinViz analyst estimates for US stocks (target price, forward EPS
+      // growth) — feeds the projection scenarios. Best-effort like Screener. ---
+      if (exchange !== 'NSE' && exchange !== 'BSE') {
+        finvizData = await fetchFinvizData(symbolUpper);
+        if (finvizData && finvizData.success) usedSources.push('FINVIZ');
       }
 
       // Update stock record with real data
@@ -395,6 +427,13 @@ overall: {
   weightedScore: recommendation.score,
   recommendation
 },
+
+// Year-wise price scenarios, moat checklist and sector outlook (Projection
+// and Moat & Sector tabs). stockData.sector is already canonical
+// (normalize_sector runs in stockDataService.py).
+projection: buildProjection(stockData, finvizData),
+moat: buildMoat(stockData, screenerShareholding),
+sectorOutlook: { sector: stockData.sector || 'default', ...sectorOutlook(stockData.sector) },
 
 dataSources: usedSources,
 analyzedAt: new Date()

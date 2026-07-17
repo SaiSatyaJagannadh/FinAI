@@ -42,14 +42,23 @@ const StockSearch = () => {
             {error}
             {lastSymbol && (
               <>
-                {' — '}
+                {' — check '}
                 <a
                   href={`https://www.google.com/finance/quote/${encodeURIComponent(lastSymbol)}:NSE`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  check {lastSymbol} on Google Finance ↗
+                  Google Finance ↗
                 </a>
+                {' (India) or '}
+                <a
+                  href={`https://finviz.com/quote.ashx?t=${encodeURIComponent(lastSymbol)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  FinViz ↗
+                </a>
+                {' (US)'}
               </>
             )}
           </div>

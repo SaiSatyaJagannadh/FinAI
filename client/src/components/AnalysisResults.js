@@ -6,6 +6,8 @@ import GrowthAnalysis from './GrowthAnalysis';
 import RiskAnalysis from './RiskAnalysis';
 import RecommendationCard from './RecommendationCard';
 import GoogleFinanceOverview from './GoogleFinanceOverview';
+import GrowthProjection from './GrowthProjection';
+import MoatSector from './MoatSector';
 
 // Plain-English meanings for every technical term used across the tabs
 const GLOSSARY = [
@@ -41,6 +43,8 @@ const AnalysisResults = ({ analysis, stock }) => {
   // buying, then charts/risk) — mirrors the buy-checklist doc.
   const tabs = [
     { id: 'overview', label: 'Overview' },
+    { id: 'projection', label: '📈 Projection' },
+    { id: 'moat', label: '🏰 Moat & Sector' },
     { id: 'fundamental', label: 'Fundamental' },
     { id: 'growth', label: 'Growth' },
     { id: 'mutualfunds', label: 'Mutual Funds' },
@@ -48,8 +52,27 @@ const AnalysisResults = ({ analysis, stock }) => {
     { id: 'risk', label: 'Risk' },
   ];
 
+  const symbol = stock?.symbol || '';
+  const isIndian = (stock?.exchange || 'NSE') === 'NSE' || stock?.exchange === 'BSE';
+
   return (
     <div className="analysis-results">
+      {analysis.dataSources?.includes('SIMULATED_DATA') && (
+        <div className="error">
+          ⚠ No real market data found for <strong>{symbol}</strong> — the numbers below are
+          simulated placeholders. Double-check the symbol on{' '}
+          {isIndian ? (
+            <a href={`https://www.google.com/finance/quote/${symbol}:NSE`} target="_blank" rel="noopener noreferrer">
+              Google Finance ↗
+            </a>
+          ) : (
+            <a href={`https://finviz.com/quote.ashx?t=${symbol}`} target="_blank" rel="noopener noreferrer">
+              FinViz ↗
+            </a>
+          )}
+          .
+        </div>
+      )}
       <div className="analysis-tabs">
         {tabs.map(tab => (
           <button
@@ -70,6 +93,8 @@ const AnalysisResults = ({ analysis, stock }) => {
 
           <div className="analysis-sections">
             <div className="analysis-grid">
+              {activeTab === 'projection' && <GrowthProjection projection={analysis.projection} stock={stock} />}
+              {activeTab === 'moat' && <MoatSector moat={analysis.moat} sectorOutlook={analysis.sectorOutlook} stock={stock} />}
               {activeTab === 'fundamental' && <FundamentalAnalysis data={analysis.fundamental} />}
               {activeTab === 'technical' && <TechnicalAnalysis data={analysis.technical} />}
               {activeTab === 'mutualfunds' && <MutualFundAnalysis data={analysis.mutualFundConviction} />}

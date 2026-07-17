@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import statistics
 import subprocess
 import sys
 import time
@@ -14,7 +15,31 @@ ROOT = Path(__file__).parent
 PY = sys.executable  # run under the same venv streamlit runs in
 
 st.set_page_config(page_title="FinAI", page_icon="📈", layout="wide")
-st.title("📈 FinAI Stock Analysis")
+
+# Fresh fintech look: gradient hero + card metrics. Theme-neutral (works light/dark).
+st.markdown("""<style>
+[data-testid="stMetric"] {
+    background: linear-gradient(160deg, rgba(99,102,241,.10), rgba(16,185,129,.06));
+    border: 1px solid rgba(128,128,128,.25);
+    border-radius: 12px;
+    padding: 10px 14px;
+}
+.stTabs [data-baseweb="tab"] { font-weight: 600; }
+.finai-hero {
+    padding: 1.1rem 1.4rem; border-radius: 16px; margin-bottom: .8rem;
+    background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 55%, #8b5cf6 100%);
+    color: #fff;
+}
+.finai-hero h1 { margin: 0; font-size: 1.9rem; color: #fff; }
+.finai-hero p { margin: .25rem 0 0; opacity: .92; font-size: .95rem; }
+</style>""", unsafe_allow_html=True)
+
+st.markdown(
+    '<div class="finai-hero"><h1>📈 FinAI Stock Analysis</h1>'
+    '<p>Multi-source AI scoring — yfinance · Screener.in · FinViz · Yahoo analyst targets — '
+    'with year-wise price projections, moat check and sector outlook.</p></div>',
+    unsafe_allow_html=True,
+)
 
 col1, col2 = st.columns([3, 1])
 symbol = col1.text_input("Stock symbol", "INFY").strip().upper()
@@ -94,6 +119,43 @@ def _projection_cache():
         return None
 
 
+sys.path.insert(0, str(ROOT / "services"))
+try:
+    from sector_map import normalize_sector
+except Exception:
+    def normalize_sector(_):
+        return "default"
+
+# ponytail: static sector-outlook table (CAGR ranges from public industry research);
+# swap for a live data source if these ever need to be current-quarter fresh.
+SECTOR_OUTLOOK = {
+    "IT_Services": ("8–10%", "cloud migration, enterprise AI adoption and digital transformation spend",
+                    "https://www.gartner.com/en/newsroom/press-releases"),
+    "Banking": ("11–13%", "credit growth running ~1.3x nominal GDP, retail lending and digitisation",
+                "https://www.ibef.org/industry/banking-india"),
+    "Pharma": ("9–11%", "generics exports, CDMO outsourcing shift and domestic formulations",
+               "https://www.ibef.org/industry/pharmaceutical-india"),
+    "FMCG": ("9–10%", "rising rural incomes, premiumisation and distribution reach",
+             "https://www.ibef.org/industry/fmcg"),
+    "Auto": ("7–9%", "EV transition, premiumisation and export growth",
+             "https://www.ibef.org/industry/india-automobiles"),
+    "Energy": ("6–8%", "energy demand growth plus renewables capex cycle",
+               "https://www.ibef.org/industry/oil-gas-india"),
+    "Telecom": ("7–9%", "ARPU repair, 5G monetisation and data consumption growth",
+                "https://www.ibef.org/industry/telecommunications"),
+    "Construction": ("9–10%", "government infrastructure capex and housing demand",
+                     "https://www.ibef.org/industry/infrastructure-sector-india"),
+    "Metals": ("5–7%", "infrastructure demand, though cyclical with global commodity prices",
+               "https://www.ibef.org/industry/metals-and-mining"),
+    "Chemicals": ("8–9%", "China+1 supply-chain shift and specialty chemicals demand",
+                  "https://www.ibef.org/industry/chemical-industry-india"),
+    "Industrials": ("8–10%", "private capex revival and manufacturing (PLI) incentives",
+                    "https://www.ibef.org/industry/manufacturing-sector-india"),
+    "default": ("6–8%", "roughly tracks nominal GDP growth",
+                "https://www.imf.org/en/Publications/WEO"),
+}
+
+
 def source_links(sym, exch):
     links = {
         "Yahoo Finance": f"https://finance.yahoo.com/quote/{sym}"
@@ -112,7 +174,20 @@ if st.button("Analyze", type="primary") and symbol:
     try:
         data = fetch("stockDataService.py", [symbol, "--exchange", exchange, "--period", "1y"])
     except Exception as e:
-        st.error(f"Failed to fetch data: {e}")
+        st.error(f"Couldn't find data for **{symbol}** — {e}")
+        st.markdown("**Double-check the symbol on:**")
+        if exchange == "US":
+            st.markdown(
+                f"- [FinViz — {symbol}](https://finviz.com/quote.ashx?t={symbol})\n"
+                f"- [Yahoo Finance symbol lookup](https://finance.yahoo.com/lookup/?s={symbol})"
+            )
+        else:
+            gf_exch = "NSE" if exchange == "NSE" else "BOM"
+            st.markdown(
+                f"- [Google Finance — {symbol}](https://www.google.com/finance/quote/{symbol}:{gf_exch})\n"
+                f"- [Screener.in — {symbol}](https://www.screener.in/company/{symbol}/consolidated/)\n"
+                f"- [NSE quote lookup](https://www.nseindia.com/get-quotes/equity?symbol={symbol})"
+            )
         st.stop()
 
     price = data.get("priceData", {})
@@ -189,8 +264,9 @@ if st.button("Analyze", type="primary") and symbol:
     if analysis:
         f, t, g, mf, r = (analysis["fundamental"], analysis["technical"], analysis["growth"],
                           analysis["mutualFund"], analysis["risk"])
-        tab_f, tab_t, tab_g, tab_mf, tab_r, tab_p = st.tabs(
-            ["Fundamental", "Technical", "Growth", "MF Conviction", "Risk", "Growth Projection"])
+        tab_p, tab_m, tab_f, tab_t, tab_g, tab_mf, tab_r = st.tabs(
+            ["📈 Growth Projection", "🏰 Moat & Sector", "Fundamental", "Technical",
+             "Growth", "MF Conviction", "Risk"])
 
         with tab_f:
             c = st.columns(4)
@@ -203,11 +279,30 @@ if st.button("Analyze", type="primary") and symbol:
             c[1].metric("ROA", f"{val(f.get('roa')):.1f}%")
             c[2].metric("Profit Margin", f"{val(f.get('profitMargin')):.1f}%")
             c[3].metric("Current Ratio", f"{val(f.get('currentRatio')):.2f}")
-            if f.get("industryComparison"):
-                st.caption(f"vs. industry ({data.get('sector', 'benchmark')}):")
-                st.json(f["industryComparison"], expanded=False)
-            with st.expander("All fundamental details"):
-                st.json(f)
+            ic = f.get("industryComparison") or {}
+            if ic:
+                pe_c = ic.get("peRatio") or {}
+                peg_c = ic.get("pegRatio") or {}
+                de_c = ic.get("debtToEquity") or {}
+                st.caption(f"How it stacks up vs. the {ic.get('sector', 'sector')} sector:")
+                st.table(pd.DataFrame([
+                    {"Metric": "P/E", "This stock": f"{pe_c.get('value', 0):.1f}",
+                     "Sector norm": "–".join(str(x) for x in pe_c.get("sectorRange", [])),
+                     "Verdict": pe_c.get("verdict", "").replace("_", " ").title()},
+                    {"Metric": "PEG", "This stock": f"{peg_c.get('value', 0):.2f}",
+                     "Sector norm": f"≤ {peg_c.get('sectorTarget', '—')}", "Verdict": ""},
+                    {"Metric": "Debt/Equity", "This stock": f"{de_c.get('value', 0):.2f}",
+                     "Sector norm": f"≤ {de_c.get('sectorMax', '—')}",
+                     "Verdict": de_c.get("verdict", "").replace("_", " ").title()},
+                ]))
+            sc_f = f.get("scores") or {}
+            if sc_f:
+                st.caption(
+                    f"Sub-scores — Valuation {sc_f.get('valuation', 0)} · "
+                    f"Profitability {sc_f.get('profitability', 0)} · "
+                    f"Financial health {sc_f.get('financialHealth', 0)} · "
+                    f"Growth {sc_f.get('growth', 0)} (each /100)"
+                )
 
         with tab_t:
             ma = t.get("movingAverages", {})
@@ -229,8 +324,6 @@ if st.button("Analyze", type="primary") and symbol:
                     f"Support: {', '.join(f'{cur}{x:,.0f}' for x in sr.get('support', [])[:3])} · "
                     f"Resistance: {', '.join(f'{cur}{x:,.0f}' for x in sr.get('resistance', [])[:3])}"
                 )
-            with st.expander("All technical details"):
-                st.json(t)
 
         with tab_g:
             rows = []
@@ -242,12 +335,17 @@ if st.button("Analyze", type="primary") and symbol:
                 rows.append({"Metric": label, "YoY %": gr.get("yoy", 0), "QoQ %": gr.get("qoq", 0),
                              "Trend": gr.get("trend", "—")})
             st.table(pd.DataFrame(rows))
-            if g.get("projections"):
-                with st.expander("Growth projections"):
-                    st.json(g["projections"])
-            if g.get("quarterly"):
-                with st.expander("Quarterly trend"):
-                    st.json(g["quarterly"])
+            q = g.get("quarterly") or {}
+            if q.get("sales"):
+                n = len(q["sales"])
+                qcols = {"Quarter": (q.get("labels") or [""] * n)[-n:], "Sales": q["sales"]}
+                for key, label in (("netProfit", "Net profit"), ("opm", "OPM %")):
+                    if len(q.get(key) or []) == n:
+                        qcols[label] = q[key]
+                st.caption("Last 8 quarters (Screener.in):")
+                st.table(pd.DataFrame(qcols))
+                for w in q.get("warnings") or []:
+                    st.warning(w)
 
         with tab_mf:
             c = st.columns(3)
@@ -265,8 +363,10 @@ if st.button("Analyze", type="primary") and symbol:
             pct = {k: v for k, v in pct.items() if v}
             if pct:
                 st.bar_chart(pd.Series(pct, name="%"))
-            with st.expander("All conviction details"):
-                st.json(mf)
+            if mf.get("totalFundsHolding"):
+                st.caption(f"{mf['totalFundsHolding']} of {mf.get('totalFundsAnalyzed', 0)} tracked "
+                           f"holders own this stock · avg holding "
+                           f"{mf.get('averageHoldingPercentage', 0):.1f}%")
 
         with tab_r:
             mr = r.get("marketRisk", {})
@@ -281,8 +381,6 @@ if st.button("Analyze", type="primary") and symbol:
             c[1].metric("Current Ratio", f"{cr.get('currentRatio', 0):.2f}")
             c[2].metric("Geopolitical", f"{(r.get('geopoliticalRisk') or {}).get('score', 0)}")
             c[3].metric("Disruption", f"{(r.get('disruptionRisk') or {}).get('score', 0)}")
-            with st.expander("All risk details"):
-                st.json(r)
 
         with tab_p:
             price_now = price.get("current", 0)
@@ -295,39 +393,59 @@ if st.button("Analyze", type="primary") and symbol:
                 except Exception:
                     fv = {}
 
-            # Each scenario: price follows the growth driver at a constant P/E.
+            # Each scenario: (label, growth %/yr, source, why). Price follows the
+            # growth driver at a constant P/E — negative growth = declining price path.
             scenarios = []
             eps_g = (g.get("epsGrowth") or {}).get("yoy", 0)
             rev_g = (g.get("revenueGrowth") or {}).get("yoy", 0)
             if eps_g:
-                scenarios.append(("Historical EPS growth (trailing, backward-looking)", eps_g,
-                                  "Screener.in / yfinance (trailing YoY)"))
+                scenarios.append(("Trailing EPS growth", eps_g,
+                                  "Screener.in / yfinance (trailing YoY)",
+                                  "Earnings keep compounding at last year's pace; "
+                                  "price follows EPS if the P/E multiple holds"))
             if rev_g:
-                scenarios.append(("Historical revenue growth (trailing, backward-looking)", rev_g,
-                                  "Screener.in / yfinance (trailing YoY)"))
+                scenarios.append(("Trailing revenue growth", rev_g,
+                                  "Screener.in / yfinance (trailing YoY)",
+                                  "Sales keep growing at last year's pace with steady margins"))
             yf_target = data.get("targetMeanPrice", 0)
             if yf_target and price_now:
-                scenarios.append(("Analyst mean target (Yahoo Finance)",
-                                  (yf_target / price_now - 1) * 100, "yfinance targetMeanPrice"))
+                scenarios.append(("Analyst mean target (Yahoo)",
+                                  (yf_target / price_now - 1) * 100, "yfinance targetMeanPrice",
+                                  "Wall Street consensus 12-month price target, "
+                                  "extended at the same annual pace"))
             if fv.get("analystTarget") and price_now:
                 scenarios.append(("Analyst target (FinViz)",
-                                  (fv["analystTarget"] / price_now - 1) * 100, fv.get("source", "FinViz")))
+                                  (fv["analystTarget"] / price_now - 1) * 100,
+                                  fv.get("source", "FinViz"),
+                                  "FinViz consensus 12-month price target, "
+                                  "extended at the same annual pace"))
             if fv.get("epsGrowthNextY"):
                 scenarios.append(("EPS estimate next year (FinViz)", fv["epsGrowthNextY"],
-                                  fv.get("source", "FinViz")))
+                                  fv.get("source", "FinViz"),
+                                  "Analysts' forward EPS estimate for next fiscal year"))
             if fv.get("epsGrowthNext5Y"):
-                scenarios.append(("EPS estimate next 5Y CAGR (FinViz)", fv["epsGrowthNext5Y"],
-                                  fv.get("source", "FinViz")))
+                scenarios.append(("EPS next-5Y CAGR (FinViz)", fv["epsGrowthNext5Y"],
+                                  fv.get("source", "FinViz"),
+                                  "Analysts' long-term (5-year) earnings growth estimate"))
 
+            YEARS = (1, 2, 3, 4, 5, 10)
             if scenarios and price_now:
+                med = statistics.median(gr for _, gr, _, _ in scenarios)
+                all_rows = [("★ Base case (median of scenarios)", med,
+                             "Blend of the rows below",
+                             "Middle-of-the-road path when the sources disagree")] + scenarios
                 rows = [{
                     "Scenario": label,
                     "Growth %/yr": round(gr, 1),
-                    "1-Year price": f"{cur}{price_now * (1 + gr / 100):,.0f}",
-                    "2-Year price": f"{cur}{price_now * (1 + gr / 100) ** 2:,.0f}",
+                    **{f"{y}Y price": f"{cur}{price_now * (1 + gr / 100) ** y:,.0f}"
+                       for y in YEARS},
+                    "Why it grows (or shrinks)": why,
                     "Source": src,
-                } for label, gr, src in scenarios]
-                st.table(pd.DataFrame(rows))
+                } for label, gr, src, why in all_rows]
+                st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+                if any(gr < 0 for _, gr, _, _ in all_rows):
+                    st.caption("⚠️ Rows with a negative Growth %/yr project a *declining* "
+                               "price — the year columns show how far it falls.")
 
                 proj = g.get("projections") or {}
                 if (proj.get("eps") or {}).get("current"):
@@ -365,12 +483,13 @@ if st.button("Analyze", type="primary") and symbol:
                         {"_id": f"{symbol}:{exchange}"},
                         {"$set": {
                             "description": "Growth projection cache — written by streamlit_app.py "
-                                           "on each analysis; per-scenario 1Y/2Y price paths with "
-                                           "sources. updatedAt gives freshness (treat >1h as stale).",
+                                           "on each analysis; per-scenario year-wise price paths "
+                                           "with sources. updatedAt gives freshness (>1h = stale).",
                             "symbol": symbol, "exchange": exchange,
                             "currentPrice": price_now,
-                            "scenarios": [{"label": l, "growthPct": gr, "source": s}
-                                          for l, gr, s in scenarios],
+                            "years": list(YEARS),
+                            "scenarios": [{"label": l, "growthPct": gr, "source": s, "why": w}
+                                          for l, gr, s, w in scenarios],
                             "sources": source_links(symbol, exchange),
                             "updatedAt": datetime.now(timezone.utc),
                         }},
@@ -379,6 +498,86 @@ if st.button("Analyze", type="primary") and symbol:
                     st.caption("Projection cached in MongoDB (`financialai.projectionCache`).")
                 except Exception:
                     pass
+
+        with tab_m:
+            st.subheader("Economic moat check")
+            st.caption("A moat = a durable edge that keeps competitors from eroding profits. "
+                       "These are the measurable fingerprints a moat leaves in the numbers:")
+            roe = data.get("roe") or 0
+            roce = data.get("roce") or 0
+            pm = data.get("profitMargin") or 0
+            de = data.get("debtToEquity") or 0
+            promoter = ((shareholding or {}).get("percentages") or {}).get("promoter") or 0
+            checks = [
+                (roe >= 15, f"Return on equity **{roe:.1f}%** — ≥15% means it earns well "
+                            f"above its cost of capital (pricing power / brand)"),
+                (pm >= 10, f"Net profit margin **{pm:.1f}%** — ≥10% suggests competitors "
+                           f"can't undercut it easily"),
+                (de <= 0.5, f"Debt/equity **{de:.2f}** — ≤0.5 means the moat is self-funded, "
+                            f"not borrowed"),
+            ]
+            if roce:
+                checks.insert(1, (roce >= 15, f"Return on capital employed **{roce:.1f}%** — "
+                                              f"≥15% means reinvested profits compound efficiently"))
+            if promoter:
+                checks.append((promoter >= 40, f"Promoter holding **{promoter:.1f}%** — ≥40% "
+                                               f"means insiders keep skin in the game"))
+            passed = sum(ok for ok, _ in checks)
+            for ok, text in checks:
+                st.markdown(("✅ " if ok else "❌ ") + text)
+            verdict = ("**Wide moat** — most quality markers present" if passed >= len(checks) - 1
+                       else "**Narrow moat** — some durable advantages, not dominant" if passed >= 2
+                       else "**No clear moat** — profits look competitive/cyclical")
+            st.info(f"{verdict} ({passed}/{len(checks)} checks passed). Numbers show the moat's "
+                    f"*effect*; read the annual report (links below) for its *cause* — brand, "
+                    f"network effects, switching costs, cost advantage or regulation.")
+
+            st.subheader("Sector outlook — coming years")
+            canon = normalize_sector(data.get("sector"))
+            cagr, driver, src_url = SECTOR_OUTLOOK.get(canon, SECTOR_OUTLOOK["default"])
+            st.markdown(
+                f"**{data.get('sector', 'Unknown sector')}** (benchmarked as *{canon}*): "
+                f"expected to grow **~{cagr}/yr** over the next few years, driven by {driver}. "
+                f"[Industry research →]({src_url})"
+            )
+
+            st.subheader("How analysts actually analyze this stock")
+            st.markdown(
+                "- **Valuation** — P/E and PEG vs. the sector range (see Fundamental tab), "
+                "plus discounted cash flow for a fair-value estimate.\n"
+                "- **Quality** — ROE/ROCE and margins, sustained over years, not one good quarter.\n"
+                "- **Growth** — revenue/EPS trajectory and management guidance "
+                "(Growth & Projection tabs).\n"
+                "- **Ownership flows** — promoter/FII/DII/MF stake changes each quarter "
+                "(MF Conviction tab); rising institutional stakes = informed conviction.\n"
+                "- **Technicals** — RSI, MACD, moving-average trend for entry timing "
+                "(Technical tab).\n"
+                "- **Risk** — beta, leverage, volatility sizing the downside (Risk tab).\n\n"
+                "FinAI's score weights these the same way: fundamental 25% · growth 25% · "
+                "technical 20% · MF conviction 15% · risk 15%."
+            )
+
+            st.subheader("Primary documents & deeper research")
+            if exchange in ("NSE", "BSE"):
+                docs = {
+                    "Annual reports, concalls & credit ratings (Screener.in)":
+                        f"https://www.screener.in/company/{symbol}/consolidated/#documents",
+                    "Exchange filings (NSE)":
+                        f"https://www.nseindia.com/get-quotes/equity?symbol={symbol}",
+                    "Google Finance": f"https://www.google.com/finance/quote/{symbol}:"
+                                      + ("NSE" if exchange == "NSE" else "BOM"),
+                }
+            else:
+                docs = {
+                    "SEC filings — 10-K annual reports (EDGAR)":
+                        f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany"
+                        f"&CIK={symbol}&type=10-K&dateb=&owner=include&count=10",
+                    "FinViz snapshot & analyst ratings": f"https://finviz.com/quote.ashx?t={symbol}",
+                    "Financial statements (stockanalysis.com)":
+                        f"https://stockanalysis.com/stocks/{symbol}/financials/",
+                }
+            for name, url in docs.items():
+                st.markdown(f"- [{name}]({url})")
     else:
         # Raw-data fallback (no Node) — the pre-parity view
         left, right = st.columns(2)
