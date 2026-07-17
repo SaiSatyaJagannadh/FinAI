@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import statistics
 import subprocess
@@ -40,6 +41,197 @@ st.markdown(
     'with year-wise price projections, moat check and sector outlook.</p></div>',
     unsafe_allow_html=True,
 )
+
+# ---------------------------------------------------------------------------
+# Auth: bcrypt-hashed users in Mongo `users`. Gates the whole analysis UI below.
+# ---------------------------------------------------------------------------
+@st.cache_resource
+def _mongo_db():
+    """Shared MongoDB handle -> the `financialai` database, or None when no
+    MongoDB is reachable (e.g. Streamlit Cloud without a MONGODB_URI secret)."""
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
+        try:
+            uri = st.secrets["MONGODB_URI"]
+        except Exception:
+            uri = "mongodb://localhost:27017/financialai"
+    try:
+        import pymongo
+        kwargs = {"serverSelectionTimeoutMS": 3000}
+        if uri.startswith("mongodb+srv") or "tls=true" in uri:
+            import certifi  # macOS/py bundles often lack system CAs for Atlas TLS
+            kwargs["tlsCAFile"] = certifi.where()
+        client = pymongo.MongoClient(uri, **kwargs)
+        client.admin.command("ping")
+        return client.get_database("financialai")
+    except Exception:
+        return None
+
+
+@st.cache_resource
+def _users_collection():
+    db = _mongo_db()
+    if db is None:
+        return None
+    coll = db["users"]
+    try:
+        coll.create_index("username", unique=True)
+    except Exception:
+        pass  # index may already exist / read-only role — insert still enforces it
+    return coll
+
+
+_ID_RE = re.compile(r"^[A-Za-z0-9_.\-]{3,30}$")
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# One valid bcrypt hash of a throwaway value: checkpw against it when a user is
+# unknown so login timing doesn't reveal whether a username exists.
+import bcrypt as _bcrypt
+_DUMMY_HASH = _bcrypt.hashpw(b"unused", _bcrypt.gensalt())
+
+
+def _valid_identifier(u):
+    return bool(_ID_RE.match(u) or _EMAIL_RE.match(u))
+
+
+def register_user(coll, username, password):
+    """Returns None on success, else a user-facing error string."""
+    username = (username or "").strip().lower()
+    if not _valid_identifier(username):
+        return "Username must be 3-30 chars (letters, numbers, _ . -) or a valid email."
+    if len(password or "") < 8:
+        return "Password must be at least 8 characters."
+    pw_hash = _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt())
+    try:
+        coll.insert_one({
+            "username": username,
+            "passwordHash": pw_hash,
+            "createdAt": datetime.now(timezone.utc),
+        })
+    except Exception as e:  # DuplicateKeyError (unique index) or connection issue
+        if "duplicate" in str(e).lower() or "E11000" in str(e):
+            return "That username is already taken."
+        return "Could not create account — please try again."
+    return None
+
+
+def verify_user(coll, username, password):
+    """True on valid credentials. Always runs bcrypt.checkpw (dummy hash when the
+    user is unknown) so unknown-user and wrong-password cost the same time."""
+    doc = coll.find_one({"username": (username or "").strip().lower()})
+    stored = bytes(doc["passwordHash"]) if doc else _DUMMY_HASH
+    ok = _bcrypt.checkpw((password or "").encode("utf-8"), stored)
+    return bool(doc and ok)
+
+
+def _auth_gate():
+    if st.session_state.get("user"):
+        with st.sidebar:
+            st.markdown(f"Signed in as **{st.session_state.user}**")
+            if st.button("Log out"):
+                del st.session_state["user"]
+                st.rerun()
+        return
+    coll = _users_collection()
+    if coll is None:
+        st.error(
+            "Login is unavailable: set the **MONGODB_URI** secret in the "
+            "Streamlit Cloud app settings (Secrets) to enable accounts."
+        )
+        st.stop()
+    # Center the auth card so it reads like a product sign-in, not a raw form.
+    _, mid, _ = st.columns([1, 1.6, 1])
+    with mid:
+        st.markdown(
+            '<div style="text-align:center;margin:.4rem 0 1rem">'
+            '<h3 style="margin:0">Welcome to FinAI 👋</h3>'
+            '<p style="opacity:.75;margin:.3rem 0 0">Sign in to analyze stocks across '
+            'yfinance, Screener.in, FinViz and Yahoo — free.</p></div>',
+            unsafe_allow_html=True,
+        )
+        login_tab, signup_tab = st.tabs(["Log in", "Sign up"])
+        with login_tab:
+            with st.form("login_form"):
+                lu = st.text_input("Username or email")
+                lp = st.text_input("Password", type="password")
+                if st.form_submit_button("Log in", type="primary"):
+                    if verify_user(coll, lu, lp):
+                        st.session_state.user = lu.strip().lower()
+                        st.rerun()
+                    else:
+                        st.error("Invalid username or password")  # generic on purpose
+        with signup_tab:
+            with st.form("signup_form"):
+                su = st.text_input("Choose a username or email")
+                sp = st.text_input("Choose a password (min 8 characters)", type="password")
+                if st.form_submit_button("Create account", type="primary"):
+                    err = register_user(coll, su, sp)
+                    if err:
+                        st.error(err)
+                    else:
+                        st.success("Account created — switch to the Log in tab to sign in.")
+        st.caption("🔒 Passwords are bcrypt-hashed. We never store them in plain text.")
+    st.stop()
+
+
+_auth_gate()
+
+
+def _help_page():
+    st.markdown("## Help & Details")
+    st.markdown(
+        "**FinAI** scores a stock across five pillars — fundamental, technical, growth, "
+        "mutual-fund conviction and risk — and blends them into a single BUY / HOLD / SELL "
+        "call, the same engine the full FinAI web app uses."
+    )
+
+    st.subheader("How to use it")
+    st.markdown(
+        "1. Go to the **Analyze** page (sidebar).\n"
+        "2. Type a stock **symbol** (e.g. `INFY`, `AAPL`).\n"
+        "3. Pick the **exchange** — NSE / BSE for India, US for American stocks.\n"
+        "4. Click **Analyze** and read the tabs:\n"
+        "   - **Fundamental** — P/E, PEG, P/B, ROE/ROA, margins vs. the sector norm.\n"
+        "   - **Technical** — RSI, MACD, moving-average trend, support/resistance.\n"
+        "   - **Growth** — YoY/QoQ revenue, profit, EPS, book-value growth + last 8 quarters.\n"
+        "   - **MF Conviction** — promoter / FII / DII / mutual-fund shareholding and quarterly changes.\n"
+        "   - **Risk** — beta, volatility, leverage, geopolitical & disruption risk.\n"
+        "   - **Growth Projection** — year-wise price paths (1Y–10Y) under each growth scenario.\n"
+        "   - **Moat & Sector** — economic-moat checklist plus a sector-growth outlook."
+    )
+
+    st.subheader("Where the data comes from")
+    st.markdown(
+        "- **yfinance** — price, valuation ratios, growth, 1-year history, analyst mean target.\n"
+        "- **Screener.in** — Indian fundamentals & shareholding (promoter/FII/DII).\n"
+        "- **FinViz** — US analyst targets and forward EPS estimates.\n"
+        "- **Yahoo analyst targets** — Wall Street 12-month consensus price target."
+    )
+    st.info(
+        "The projections are **mechanical extrapolations** — current price grown at a source's "
+        "growth rate assuming a constant P/E. They are not forecasts and **not investment advice.** "
+        "Always read the primary filings (linked inside the Moat & Sector tab)."
+    )
+
+    st.subheader("Symbol not found?")
+    st.markdown(
+        "If Analyze can't find a symbol, confirm the exact ticker first:\n"
+        "- **US stocks** → [FinViz](https://finviz.com/) or "
+        "[Yahoo Finance lookup](https://finance.yahoo.com/lookup/).\n"
+        "- **India (NSE/BSE)** → [Google Finance](https://www.google.com/finance/) or "
+        "[Screener.in](https://www.screener.in/)."
+    )
+
+    st.subheader("Contact / Support")
+    st.markdown(
+        "Questions, bugs or feedback? Email "
+        "[saijagannadh0625@gmail.com](mailto:saijagannadh0625@gmail.com)."
+    )
+
+
+page = st.sidebar.radio("Page", ["Analyze", "Help & Details"])
+if page == "Help & Details":
+    _help_page()
+    st.stop()
 
 col1, col2 = st.columns([3, 1])
 symbol = col1.text_input("Stock symbol", "INFY").strip().upper()
@@ -100,23 +292,8 @@ def _projection_cache():
     Written on every analysis; read back as a fallback when live data is down.
     Returns None when no MongoDB is reachable (e.g. Streamlit Cloud without
     a MONGODB_URI secret) — everything still works, just without persistence."""
-    uri = os.environ.get("MONGODB_URI")
-    if not uri:
-        try:
-            uri = st.secrets["MONGODB_URI"]
-        except Exception:
-            uri = "mongodb://localhost:27017/financialai"
-    try:
-        import pymongo
-        kwargs = {"serverSelectionTimeoutMS": 3000}
-        if uri.startswith("mongodb+srv") or "tls=true" in uri:
-            import certifi  # macOS/py bundles often lack system CAs for Atlas TLS
-            kwargs["tlsCAFile"] = certifi.where()
-        client = pymongo.MongoClient(uri, **kwargs)
-        client.admin.command("ping")
-        return client.get_database("financialai")["projectionCache"]
-    except Exception:
-        return None
+    db = _mongo_db()
+    return db["projectionCache"] if db is not None else None
 
 
 sys.path.insert(0, str(ROOT / "services"))

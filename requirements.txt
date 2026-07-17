@@ -30,6 +30,9 @@ nltk>=3.8.1   # after installing, run: python -m nltk.downloader punkt stopwords
 # MongoDB driver (if you ever need to talk Mongo from Python)
 pymongo>=4.7.0
 
+# Password hashing for the Streamlit app's login/signup
+bcrypt>=4.1.0
+
 # Jupyter / notebooks (optional, handy for exploratory analysis)
 notebook>=7.2.2
 ipykernel>=6.29.0
