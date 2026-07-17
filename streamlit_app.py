@@ -300,10 +300,10 @@ if st.button("Analyze", type="primary") and symbol:
             eps_g = (g.get("epsGrowth") or {}).get("yoy", 0)
             rev_g = (g.get("revenueGrowth") or {}).get("yoy", 0)
             if eps_g:
-                scenarios.append(("Historical EPS growth", eps_g,
+                scenarios.append(("Historical EPS growth (trailing, backward-looking)", eps_g,
                                   "Screener.in / yfinance (trailing YoY)"))
             if rev_g:
-                scenarios.append(("Historical revenue growth", rev_g,
+                scenarios.append(("Historical revenue growth (trailing, backward-looking)", rev_g,
                                   "Screener.in / yfinance (trailing YoY)"))
             yf_target = data.get("targetMeanPrice", 0)
             if yf_target and price_now:

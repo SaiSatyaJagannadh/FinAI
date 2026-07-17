@@ -363,35 +363,32 @@ def _build_shareholding(sh_rows):
     """From the quarterly shareholding table, extract latest quarter percentages
     and QoQ deltas for promoter / FII / DII / MF / others."""
     # Row labels on the page look like "Promoters +", "FIIs +", "DIIs +",
-    # "Public +". Mutual funds have no separate row (they sit inside DIIs).
-    cats = {
-        "promoter": ["promoter"],
-        "fii": ["fii", "foreign institutions"],
-        "dii": ["dii", "domestic institutions"],
-        "mf": ["mutual funds", "mutual fund"],
-        "others": ["public", "others", "other"],
-    }
-    percentages = {}
-    qoq = {}
-    for key, labels in cats.items():
-        for label in labels:
-            vals = _row_label_contains(sh_rows, label)
-            if vals:
+    # "Government +", "Public +", "Others +", "No. of Shareholders".
+    # Mutual funds have no separate row (they sit inside DIIs). Each table row is
+    # assigned to its first matching category and ACCUMULATED, so the small
+    # Government/Others rows land in "others" instead of being dropped
+    # (previously only "Public" counted and the buckets summed to <100%).
+    cats = [
+        ("promoter", ("promoter",)),
+        ("fii", ("fii", "foreign institution")),
+        ("dii", ("dii", "domestic institution")),
+        ("mf", ("mutual fund",)),
+        ("others", ("public", "government", "other")),
+    ]
+    percentages = {key: 0 for key, _ in cats}
+    qoq = {key: 0 for key, _ in cats}
+    for label, vals in sh_rows:
+        low = label.lower()
+        if "shareholder" in low:  # "No. of Shareholders" row — a count, not a %
+            continue
+        for key, pats in cats:
+            if any(p in low for p in pats):
                 nums = [v for v in vals if v is not None]
                 if nums:
-                    percentages[key] = nums[-1]
+                    percentages[key] = round(percentages[key] + nums[-1], 2)
                     if len(nums) >= 2:
-                        qoq[key] = round(nums[-1] - nums[-2], 3)
-                    else:
-                        qoq[key] = 0
-                else:
-                    percentages[key] = 0
-                    qoq[key] = 0
+                        qoq[key] = round(qoq[key] + nums[-1] - nums[-2], 3)
                 break
-        else:
-            percentages.setdefault(key, 0)
-            qoq.setdefault(key, 0)
-    # Normalise percentages to 0-100 (Screener reports them as 0-100 already).
     return {"percentages": percentages, "qoqChanges": qoq}
 
 
