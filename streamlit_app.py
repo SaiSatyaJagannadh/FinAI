@@ -1,8 +1,10 @@
 import json
+import os
 import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -67,6 +69,45 @@ def val(x, default=0):
     return x if x is not None else default
 
 
+@st.cache_resource
+def _projection_cache():
+    """MongoDB collection `projectionCache` — one doc per symbol:exchange.
+    Written on every analysis; read back as a fallback when live data is down.
+    Returns None when no MongoDB is reachable (e.g. Streamlit Cloud without
+    a MONGODB_URI secret) — everything still works, just without persistence."""
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
+        try:
+            uri = st.secrets["MONGODB_URI"]
+        except Exception:
+            uri = "mongodb://localhost:27017/financialai"
+    try:
+        import pymongo
+        kwargs = {"serverSelectionTimeoutMS": 3000}
+        if uri.startswith("mongodb+srv") or "tls=true" in uri:
+            import certifi  # macOS/py bundles often lack system CAs for Atlas TLS
+            kwargs["tlsCAFile"] = certifi.where()
+        client = pymongo.MongoClient(uri, **kwargs)
+        client.admin.command("ping")
+        return client.get_database("financialai")["projectionCache"]
+    except Exception:
+        return None
+
+
+def source_links(sym, exch):
+    links = {
+        "Yahoo Finance": f"https://finance.yahoo.com/quote/{sym}"
+                         + (".NS" if exch == "NSE" else ".BO" if exch == "BSE" else ""),
+        "Google Finance": f"https://www.google.com/finance/quote/{sym}:"
+                          + {"NSE": "NSE", "BSE": "BOM"}.get(exch, "NASDAQ"),
+    }
+    if exch in ("NSE", "BSE"):
+        links["Screener.in"] = f"https://www.screener.in/company/{sym}/consolidated/"
+    else:
+        links["FinViz"] = f"https://finviz.com/quote.ashx?t={sym}"
+    return links
+
+
 if st.button("Analyze", type="primary") and symbol:
     try:
         data = fetch("stockDataService.py", [symbol, "--exchange", exchange, "--period", "1y"])
@@ -120,9 +161,10 @@ if st.button("Analyze", type="primary") and symbol:
     if analysis:
         rec = analysis["overall"]["recommendation"]
         banner = {"BUY": st.success, "HOLD": st.warning, "SELL": st.error}.get(rec["action"], st.info)
+        bcur = cur.replace("$", "\\$")  # bare $..$ pairs trigger LaTeX in st.markdown widgets
         banner(
             f"**{rec['action']}** ({rec['confidence']} confidence) · Score **{rec['score']}/100** · "
-            f"Target {cur}{rec['targetPrice']:,.2f} · Stop-loss {cur}{rec['stopLoss']:,.2f} · "
+            f"Target {bcur}{rec['targetPrice']:,.2f} · Stop-loss {bcur}{rec['stopLoss']:,.2f} · "
             f"{rec['investmentHorizon'].replace('-', ' ').title()}"
         )
         o = analysis["overall"]
@@ -147,8 +189,8 @@ if st.button("Analyze", type="primary") and symbol:
     if analysis:
         f, t, g, mf, r = (analysis["fundamental"], analysis["technical"], analysis["growth"],
                           analysis["mutualFund"], analysis["risk"])
-        tab_f, tab_t, tab_g, tab_mf, tab_r = st.tabs(
-            ["Fundamental", "Technical", "Growth", "MF Conviction", "Risk"])
+        tab_f, tab_t, tab_g, tab_mf, tab_r, tab_p = st.tabs(
+            ["Fundamental", "Technical", "Growth", "MF Conviction", "Risk", "Growth Projection"])
 
         with tab_f:
             c = st.columns(4)
@@ -241,6 +283,102 @@ if st.button("Analyze", type="primary") and symbol:
             c[3].metric("Disruption", f"{(r.get('disruptionRisk') or {}).get('score', 0)}")
             with st.expander("All risk details"):
                 st.json(r)
+
+        with tab_p:
+            price_now = price.get("current", 0)
+
+            # FinViz enrichment for US stocks (best-effort, cached 1h like the other fetches)
+            fv = {}
+            if exchange == "US":
+                try:
+                    fv = fetch("finvizService.py", [symbol])
+                except Exception:
+                    fv = {}
+
+            # Each scenario: price follows the growth driver at a constant P/E.
+            scenarios = []
+            eps_g = (g.get("epsGrowth") or {}).get("yoy", 0)
+            rev_g = (g.get("revenueGrowth") or {}).get("yoy", 0)
+            if eps_g:
+                scenarios.append(("Historical EPS growth", eps_g,
+                                  "Screener.in / yfinance (trailing YoY)"))
+            if rev_g:
+                scenarios.append(("Historical revenue growth", rev_g,
+                                  "Screener.in / yfinance (trailing YoY)"))
+            yf_target = data.get("targetMeanPrice", 0)
+            if yf_target and price_now:
+                scenarios.append(("Analyst mean target (Yahoo Finance)",
+                                  (yf_target / price_now - 1) * 100, "yfinance targetMeanPrice"))
+            if fv.get("analystTarget") and price_now:
+                scenarios.append(("Analyst target (FinViz)",
+                                  (fv["analystTarget"] / price_now - 1) * 100, fv.get("source", "FinViz")))
+            if fv.get("epsGrowthNextY"):
+                scenarios.append(("EPS estimate next year (FinViz)", fv["epsGrowthNextY"],
+                                  fv.get("source", "FinViz")))
+            if fv.get("epsGrowthNext5Y"):
+                scenarios.append(("EPS estimate next 5Y CAGR (FinViz)", fv["epsGrowthNext5Y"],
+                                  fv.get("source", "FinViz")))
+
+            if scenarios and price_now:
+                rows = [{
+                    "Scenario": label,
+                    "Growth %/yr": round(gr, 1),
+                    "1-Year price": f"{cur}{price_now * (1 + gr / 100):,.0f}",
+                    "2-Year price": f"{cur}{price_now * (1 + gr / 100) ** 2:,.0f}",
+                    "Source": src,
+                } for label, gr, src in scenarios]
+                st.table(pd.DataFrame(rows))
+
+                proj = g.get("projections") or {}
+                if (proj.get("eps") or {}).get("current"):
+                    pe = proj["eps"]
+                    st.caption(
+                        f"EPS path: {pe['current']:.2f} now → {pe['projected1Y']:.2f} in 1Y → "
+                        f"{pe['projected2Y']:.2f} in 2Y at {pe['cagr']:.1f}% CAGR "
+                        f"(price follows EPS if the P/E multiple holds)."
+                    )
+
+                with st.expander("How these numbers are estimated"):
+                    st.markdown(
+                        f"- Projected price = current price x (1 + growth)^years, assuming the "
+                        f"P/E multiple stays constant — price tracks earnings.\n"
+                        f"- Example: {cur}{price_now:,.0f} doubling in 1 year requires "
+                        f"{100:.0f}% growth; check which scenario above gets closest.\n"
+                        f"- Required CAGR for any target = (target / current)^(1/years) − 1.\n"
+                        f"- Growth drivers come from real filings-based data: Screener.in "
+                        f"(Indian annual reports), FinViz (US analyst estimates), and "
+                        f"Yahoo Finance analyst mean targets.\n\n"
+                        f"*These are mechanical extrapolations, not investment advice.*"
+                    )
+            else:
+                st.info("Not enough growth data to project a price path for this stock.")
+
+            st.subheader("Sources for this stock")
+            for name, url in source_links(symbol, exchange).items():
+                st.markdown(f"- [{name}]({url})")
+
+            # Persist to MongoDB (projectionCache) — cache + audit trail
+            coll = _projection_cache()
+            if coll is not None:
+                try:
+                    coll.update_one(
+                        {"_id": f"{symbol}:{exchange}"},
+                        {"$set": {
+                            "description": "Growth projection cache — written by streamlit_app.py "
+                                           "on each analysis; per-scenario 1Y/2Y price paths with "
+                                           "sources. updatedAt gives freshness (treat >1h as stale).",
+                            "symbol": symbol, "exchange": exchange,
+                            "currentPrice": price_now,
+                            "scenarios": [{"label": l, "growthPct": gr, "source": s}
+                                          for l, gr, s in scenarios],
+                            "sources": source_links(symbol, exchange),
+                            "updatedAt": datetime.now(timezone.utc),
+                        }},
+                        upsert=True,
+                    )
+                    st.caption("Projection cached in MongoDB (`financialai.projectionCache`).")
+                except Exception:
+                    pass
     else:
         # Raw-data fallback (no Node) — the pre-parity view
         left, right = st.columns(2)
