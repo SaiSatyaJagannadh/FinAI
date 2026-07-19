@@ -75,14 +75,17 @@ def _mongo_client(uri):
 
 
 def _secret(name):
-    """Env var first, st.secrets fallback (Streamlit Cloud), else None."""
+    """Env var first, st.secrets fallback (Streamlit Cloud), else None.
+    Tries the lowercase name too — pasted secrets often mirror a mixed-case .env."""
     v = os.environ.get(name)
     if v:
         return v
-    try:
-        return st.secrets[name]
-    except Exception:
-        return None
+    for key in (name, name.lower()):
+        try:
+            return st.secrets[key]
+        except Exception:
+            continue
+    return None
 
 
 def _resolve_uri():
