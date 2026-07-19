@@ -330,7 +330,10 @@ def _chat_agent():
     if os.environ.get("TAVILY_API_KEY"):  # web search is optional
         from langchain_tavily import TavilySearch
         tools.append(TavilySearch(max_results=3))
-    return create_agent(ChatOpenAI(model="gpt-4o-mini", temperature=0.3), tools)
+    # store=True: requests also appear in platform.openai.com/logs (Chat
+    # Completions tab, 30-day retention) alongside the LangSmith traces.
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, store=True)
+    return create_agent(llm, tools)
 
 
 def _stock_context():
