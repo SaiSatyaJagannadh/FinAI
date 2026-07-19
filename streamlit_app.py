@@ -44,6 +44,18 @@ st.markdown("""<style>
 }
 .finai-hero h1 { margin: 0; font-size: 1.9rem; color: #fff; }
 .finai-hero p { margin: .25rem 0 0; opacity: .92; font-size: .95rem; }
+/* Phone: wrap metric rows 2-up instead of squishing 5 across; shrink hero/tabs */
+@media (max-width: 640px) {
+    [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: .5rem; }
+    [data-testid="stHorizontalBlock"] > div {
+        flex: 1 1 45% !important; min-width: 45% !important;
+    }
+    [data-testid="stMetricValue"] { font-size: 1.35rem; }
+    .finai-hero { padding: .8rem 1rem; }
+    .finai-hero h1 { font-size: 1.3rem; }
+    .finai-hero p { font-size: .8rem; }
+    .stTabs [data-baseweb="tab"] { font-size: .8rem; padding-left: 8px; padding-right: 8px; }
+}
 </style>""", unsafe_allow_html=True)
 
 st.markdown(
@@ -54,7 +66,8 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------------------
-# Auth: bcrypt-hashed users in Mongo `users`. Gates the whole analysis UI below.
+# Auth: bcrypt-hashed users in Mongo `users`. OPTIONAL by default (guest mode,
+# sidebar login expander); set the REQUIRE_LOGIN secret to "true" for the gate.
 # ---------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def _mongo_client(uri):
@@ -165,7 +178,34 @@ def verify_user(coll, username, password):
     return bool(doc and ok)
 
 
+def _login_forms(coll):
+    login_tab, signup_tab = st.tabs(["Log in", "Sign up"])
+    with login_tab:
+        with st.form("login_form"):
+            lu = st.text_input("Username or email")
+            lp = st.text_input("Password", type="password")
+            if st.form_submit_button("Log in", type="primary"):
+                if verify_user(coll, lu, lp):
+                    st.session_state.user = lu.strip().lower()
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password")  # generic on purpose
+    with signup_tab:
+        with st.form("signup_form"):
+            su = st.text_input("Choose a username or email")
+            sp = st.text_input("Choose a password (min 8 characters)", type="password")
+            if st.form_submit_button("Create account", type="primary"):
+                err = register_user(coll, su, sp)
+                if err:
+                    st.error(err)
+                else:
+                    st.success("Account created — switch to the Log in tab to sign in.")
+    st.caption("🔒 Passwords are bcrypt-hashed. We never store them in plain text.")
+
+
 def _auth_gate():
+    """Login is OPTIONAL by default — the app works as guest. Set the
+    REQUIRE_LOGIN secret to "true" to bring back the hard gate."""
     if st.session_state.get("user"):
         with st.sidebar:
             st.markdown(f"Signed in as **{st.session_state.user}**")
@@ -173,6 +213,19 @@ def _auth_gate():
                 del st.session_state["user"]
                 st.rerun()
         return
+
+    require = str(_secret("REQUIRE_LOGIN") or "").lower() in ("true", "1", "yes")
+    if not require:
+        # Guest mode: optional account section in the sidebar, app stays usable.
+        with st.sidebar.expander("👤 Log in / Sign up (optional)"):
+            coll, _err = _users_collection()
+            if coll is None:
+                st.caption("Accounts are unavailable right now — you can still "
+                           "use the app as a guest.")
+            else:
+                _login_forms(coll)
+        return
+
     coll, err = _users_collection()
     if coll is None:
         if err == "no-uri":
@@ -198,28 +251,7 @@ def _auth_gate():
             'yfinance, Screener.in, FinViz and Yahoo — free.</p></div>',
             unsafe_allow_html=True,
         )
-        login_tab, signup_tab = st.tabs(["Log in", "Sign up"])
-        with login_tab:
-            with st.form("login_form"):
-                lu = st.text_input("Username or email")
-                lp = st.text_input("Password", type="password")
-                if st.form_submit_button("Log in", type="primary"):
-                    if verify_user(coll, lu, lp):
-                        st.session_state.user = lu.strip().lower()
-                        st.rerun()
-                    else:
-                        st.error("Invalid username or password")  # generic on purpose
-        with signup_tab:
-            with st.form("signup_form"):
-                su = st.text_input("Choose a username or email")
-                sp = st.text_input("Choose a password (min 8 characters)", type="password")
-                if st.form_submit_button("Create account", type="primary"):
-                    err = register_user(coll, su, sp)
-                    if err:
-                        st.error(err)
-                    else:
-                        st.success("Account created — switch to the Log in tab to sign in.")
-        st.caption("🔒 Passwords are bcrypt-hashed. We never store them in plain text.")
+        _login_forms(coll)
     st.stop()
 
 
@@ -425,6 +457,12 @@ def run_analyses(stock_data, shareholding, sym):
         return None
 
 
+def _table(df):
+    """Mobile-friendly table — st.dataframe scrolls horizontally on phones,
+    st.table just overflows."""
+    st.dataframe(pd.DataFrame(df), hide_index=True, width="stretch")
+
+
 def val(x, default=0):
     """Analysis fields are sometimes bare numbers, sometimes {value, score, ...}."""
     if isinstance(x, dict):
@@ -619,7 +657,7 @@ if _last:
                 peg_c = ic.get("pegRatio") or {}
                 de_c = ic.get("debtToEquity") or {}
                 st.caption(f"How it stacks up vs. the {ic.get('sector', 'sector')} sector:")
-                st.table(pd.DataFrame([
+                _table(pd.DataFrame([
                     {"Metric": "P/E", "This stock": f"{pe_c.get('value', 0):.1f}",
                      "Sector norm": "–".join(str(x) for x in pe_c.get("sectorRange", [])),
                      "Verdict": pe_c.get("verdict", "").replace("_", " ").title()},
@@ -660,15 +698,19 @@ if _last:
                 )
 
         with tab_g:
+            st.caption("How much each number grew — **vs. the same period last year** "
+                       "(the trend that matters) and **vs. the previous quarter**.")
             rows = []
             for key, label in (("revenueGrowth", "Revenue"), ("profitGrowth", "Profit"),
                                ("epsGrowth", "EPS"), ("bookValueGrowth", "Book Value"),
                                ("dividendGrowth", "Dividend"),
                                ("operatingProfitGrowth", "Operating Profit"), ("pbtGrowth", "PBT")):
                 gr = g.get(key) or {}
-                rows.append({"Metric": label, "YoY %": gr.get("yoy", 0), "QoQ %": gr.get("qoq", 0),
+                rows.append({"Metric": label,
+                             "vs. last year": f"{gr.get('yoy', 0):+.1f}%",
+                             "vs. last quarter": f"{gr.get('qoq', 0):+.1f}%",
                              "Trend": gr.get("trend", "—")})
-            st.table(pd.DataFrame(rows))
+            _table(pd.DataFrame(rows))
             q = g.get("quarterly") or {}
             if q.get("sales"):
                 n = len(q["sales"])
@@ -677,7 +719,7 @@ if _last:
                     if len(q.get(key) or []) == n:
                         qcols[label] = q[key]
                 st.caption("Last 8 quarters (Screener.in):")
-                st.table(pd.DataFrame(qcols))
+                _table(pd.DataFrame(qcols))
                 for w in q.get("warnings") or []:
                     st.warning(w)
 
@@ -688,7 +730,7 @@ if _last:
             c[2].metric("Holding percentile", f"{mf.get('holdingPercentile', 0)}")
             holders = mf.get("topHolders") or []
             if holders:
-                st.table(pd.DataFrame([{
+                _table(pd.DataFrame([{
                     "Holder": h.get("fundName"),
                     "Holding %": h.get("holdingPercentage", 0),
                     "QoQ change": h.get("changeLastQuarter", 0),
@@ -732,15 +774,36 @@ if _last:
             scenarios = []
             eps_g = (g.get("epsGrowth") or {}).get("yoy", 0)
             rev_g = (g.get("revenueGrowth") or {}).get("yoy", 0)
-            if eps_g:
-                scenarios.append(("Trailing EPS growth", eps_g,
-                                  "Screener.in / yfinance (trailing YoY)",
-                                  "Earnings keep compounding at last year's pace; "
+            # US caveat (data audit): yfinance's epsGrowth/revenueGrowth are the
+            # LATEST QUARTER's YoY (earnings = net income, not EPS) — they spike
+            # wildly (NVDA: 214%/yr). Prefer FinViz's annual figure for US;
+            # Indian stocks get true trailing values from the Screener merge.
+            if fv.get("epsGrowthThisY"):
+                scenarios.append(("EPS growth this year (FinViz)", fv["epsGrowthThisY"],
+                                  fv.get("source", "FinViz"),
+                                  "Earnings keep compounding at this year's annual pace; "
                                   "price follows EPS if the P/E multiple holds"))
+            elif eps_g:
+                if exchange == "US":
+                    scenarios.append(("Latest-quarter EPS pace", eps_g,
+                                      "yfinance (most recent quarter YoY)",
+                                      "One quarter's growth extrapolated for years — "
+                                      "treat as an upper bound after a spike quarter"))
+                else:
+                    scenarios.append(("Trailing EPS growth", eps_g,
+                                      "Screener.in / yfinance (trailing YoY)",
+                                      "Earnings keep compounding at last year's pace; "
+                                      "price follows EPS if the P/E multiple holds"))
             if rev_g:
-                scenarios.append(("Trailing revenue growth", rev_g,
-                                  "Screener.in / yfinance (trailing YoY)",
-                                  "Sales keep growing at last year's pace with steady margins"))
+                if exchange == "US":
+                    scenarios.append(("Latest-quarter revenue pace", rev_g,
+                                      "yfinance (most recent quarter YoY)",
+                                      "One quarter's sales growth extrapolated — "
+                                      "upper bound, margins assumed steady"))
+                else:
+                    scenarios.append(("Trailing revenue growth", rev_g,
+                                      "Screener.in / yfinance (trailing YoY)",
+                                      "Sales keep growing at last year's pace with steady margins"))
             yf_target = data.get("targetMeanPrice", 0)
             if yf_target and price_now:
                 scenarios.append(("Analyst mean target (Yahoo)",
@@ -765,21 +828,33 @@ if _last:
             YEARS = (1, 2, 3, 4, 5, 10)
             if scenarios and price_now:
                 med = statistics.median(gr for _, gr, _, _ in scenarios)
-                all_rows = [("★ Base case (median of scenarios)", med,
-                             "Blend of the rows below",
-                             "Middle-of-the-road path when the sources disagree")] + scenarios
+
+                # Headline: where the base case takes the price. One card per horizon.
+                st.markdown(f"**If growth averages {med:+.1f}%/yr** (middle of the "
+                            f"{len(scenarios)} scenarios below), {cur}{price_now:,.0f} becomes:")
+                cards = st.columns(4)
+                for card, y in zip(cards, (1, 3, 5, 10)):
+                    p = price_now * (1 + med / 100) ** y
+                    card.metric(f"In {y} year{'s' if y > 1 else ''}", f"{cur}{p:,.0f}",
+                                f"{(p / price_now - 1) * 100:+.0f}%")
+
+                # Per-scenario table, slimmed to the horizons people actually read.
+                st.markdown("**Each scenario, year by year** — every row answers: "
+                            "*if this growth rate holds, what's the price?*")
                 rows = [{
                     "Scenario": label,
-                    "Growth %/yr": round(gr, 1),
-                    **{f"{y}Y price": f"{cur}{price_now * (1 + gr / 100) ** y:,.0f}"
-                       for y in YEARS},
-                    "Why it grows (or shrinks)": why,
+                    "Growth/yr": f"{gr:+.1f}%",
+                    **{f"{y}Y": f"{cur}{price_now * (1 + gr / 100) ** y:,.0f}"
+                       for y in (1, 2, 3, 5, 10)},
                     "Source": src,
-                } for label, gr, src, why in all_rows]
+                } for label, gr, src, why in scenarios]
                 st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-                if any(gr < 0 for _, gr, _, _ in all_rows):
-                    st.caption("⚠️ Rows with a negative Growth %/yr project a *declining* "
-                               "price — the year columns show how far it falls.")
+                if any(gr < 0 for _, gr, _, _ in scenarios):
+                    st.caption("⚠️ A negative Growth/yr row projects a *declining* "
+                               "price — its year columns show how far it falls.")
+                with st.expander("What each scenario means"):
+                    for label, gr, src, why in scenarios:
+                        st.markdown(f"- **{label}** ({gr:+.1f}%/yr, {src}) — {why}")
 
                 proj = g.get("projections") or {}
                 if (proj.get("eps") or {}).get("current"):
@@ -917,7 +992,7 @@ if _last:
         left, right = st.columns(2)
         with left:
             st.subheader("Fundamentals")
-            st.table(pd.DataFrame({
+            _table(pd.DataFrame({
                 "Metric": ["EPS", "Book Value", "Dividend Yield", "Debt/Equity",
                            "Profit Margin", "Operating Margin", "Beta", "52W High", "52W Low"],
                 "Value": [f"{fund.get('eps', 0):.2f}", f"{fund.get('bookValue', 0):.2f}",
