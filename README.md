@@ -183,3 +183,6 @@ MIT License
 - Mutual fund research approaches from leading asset managers
 - Data providers: Money Control, Trendlyne, NSE, BSE
 - Open source community for various libraries and tools
+
+## APP URL
+https://finai-stock-analysis.streamlit.app/
