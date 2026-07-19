@@ -15,6 +15,17 @@ import streamlit as st
 ROOT = Path(__file__).parent
 PY = sys.executable  # run under the same venv streamlit runs in
 
+# Load root .env into os.environ for local dev (Streamlit Cloud uses st.secrets;
+# stdlib parse — not worth a python-dotenv dependency for KEY=value lines).
+_envf = ROOT / ".env"
+if _envf.exists():
+    for _line in _envf.read_text().splitlines():
+        if "=" in _line and not _line.lstrip().startswith("#"):
+            _k, _, _v = _line.partition("=")
+            # .upper(): env lookups are case-sensitive and the user's .env mixes
+            # cases (tavily_api_key, langsmith_Project) — canonicalize on load
+            os.environ.setdefault(_k.strip().upper(), _v.strip().strip('"').strip("'"))
+
 st.set_page_config(page_title="FinAI", page_icon="📈", layout="wide")
 
 # Fresh fintech look: gradient hero + card metrics. Theme-neutral (works light/dark).
@@ -63,14 +74,19 @@ def _mongo_client(uri):
     return client
 
 
-def _resolve_uri():
-    uri = os.environ.get("MONGODB_URI")
-    if uri:
-        return uri
+def _secret(name):
+    """Env var first, st.secrets fallback (Streamlit Cloud), else None."""
+    v = os.environ.get(name)
+    if v:
+        return v
     try:
-        return st.secrets["MONGODB_URI"]
+        return st.secrets[name]
     except Exception:
         return None
+
+
+def _resolve_uri():
+    return _secret("MONGODB_URI")
 
 
 def _mongo_db():
@@ -258,7 +274,103 @@ def _help_page():
     )
 
 
+# ---------------------------------------------------------------------------
+# Sidebar AI chat — GPT-4o-mini agent with Tavily web search, traced by
+# LangSmith (env-var driven, zero code). Degrades to an info note if keys
+# are missing, same style as the Mongo gate above.
+# ---------------------------------------------------------------------------
+for _k in ("OPENAI_API_KEY", "TAVILY_API_KEY", "LANGSMITH_TRACING",
+           "LANGSMITH_API_KEY", "LANGSMITH_PROJECT"):
+    _v = _secret(_k)
+    if _v:
+        os.environ[_k] = str(_v)
+
+
+@st.cache_resource(show_spinner=False)
+def _chat_agent():
+    from langchain.agents import create_agent
+    from langchain_openai import ChatOpenAI
+    tools = []
+    if os.environ.get("TAVILY_API_KEY"):  # web search is optional
+        from langchain_tavily import TavilySearch
+        tools.append(TavilySearch(max_results=3))
+    return create_agent(ChatOpenAI(model="gpt-4o-mini", temperature=0.3), tools)
+
+
+def _stock_context():
+    last = st.session_state.get("last")
+    if not last:
+        return "No stock has been analyzed yet in this session."
+    data, analysis = last["data"], last["analysis"]
+    price = data.get("priceData", {})
+    fund = data.get("fundamental", {})
+    ctx = {
+        "symbol": last["symbol"], "exchange": last["exchange"],
+        "name": data.get("name"), "sector": data.get("sector"),
+        "currentPrice": price.get("current"), "marketCap": price.get("marketCap"),
+        "peRatio": fund.get("peRatio"), "pbRatio": fund.get("pbRatio"),
+        "roe": data.get("roe"), "debtToEquity": data.get("debtToEquity"),
+        "profitMargin": data.get("profitMargin"),
+        "revenueGrowthYoY": (data.get("revenueGrowth") or {}).get("yoy"),
+        "epsGrowthYoY": (data.get("epsGrowth") or {}).get("yoy"),
+    }
+    if analysis:
+        o = analysis["overall"]
+        ctx["finaiScores"] = {
+            "recommendation": o["recommendation"]["action"],
+            "overallScore": o["recommendation"]["score"],
+            "targetPrice": o["recommendation"]["targetPrice"],
+            "stopLoss": o["recommendation"]["stopLoss"],
+            "fundamental": o["fundamentalScore"], "technical": o["technicalScore"],
+            "mfConviction": o["convictionScore"], "growth": o["growthScore"],
+            "risk": o["riskScore"],
+        }
+    return json.dumps(ctx, default=str)
+
+
+def _ask_agent(question):
+    system = (
+        "You are FinAI's assistant inside a stock-analysis app. Answer questions about "
+        "the analyzed stock using the context below, and use the web search tool for "
+        "live prices, news or anything not in the context. Be concise. You are not a "
+        "licensed financial advisor — frame answers as education, never as personalized "
+        "investment advice.\n\nCurrent analysis context (JSON):\n" + _stock_context()
+    )
+    msgs = [("system", system)]
+    for m in st.session_state.get("chat", [])[-10:]:
+        msgs.append((m["role"], m["content"]))
+    msgs.append(("user", question))
+    try:
+        out = _chat_agent().invoke({"messages": msgs})
+        return out["messages"][-1].content
+    except Exception as e:
+        return f"Sorry, the AI call failed: {e}"
+
+
+def _sidebar_chat():
+    with st.sidebar:
+        st.divider()
+        st.subheader("💬 Ask FinAI")
+        if not os.environ.get("OPENAI_API_KEY"):
+            st.info("AI chat unavailable — add the **OPENAI_API_KEY** secret "
+                    "in the Streamlit Cloud app settings.")
+            return
+        if not os.environ.get("TAVILY_API_KEY"):
+            st.caption("⚠️ Web search off — add **TAVILY_API_KEY** to enable live news.")
+        st.session_state.setdefault("chat", [])
+        for m in st.session_state.chat:
+            st.chat_message(m["role"]).write(m["content"])
+        q = st.chat_input("Ask about the analyzed stock or finance…")
+        if q:
+            with st.spinner("Thinking…"):
+                reply = _ask_agent(q)
+            st.session_state.chat += [{"role": "user", "content": q},
+                                      {"role": "assistant", "content": reply}]
+            st.rerun()  # render the new turn above the input in order
+
+
 page = st.sidebar.radio("Page", ["Analyze", "Help & Details"])
+_sidebar_chat()
 if page == "Help & Details":
     _help_page()
     st.stop()
@@ -397,9 +509,6 @@ if st.button("Analyze", type="primary") and symbol:
             )
         st.stop()
 
-    price = data.get("priceData", {})
-    cur = "₹" if exchange in ("NSE", "BSE") else "$"
-
     # --- Screener.in enrichment: the same merge analysisRoutes.js does (lines ~145-160).
     # Unconditional like the route (Screener 404s on non-Indian symbols -> sc stays {}).
     # yfinance ratios can be stale/wrong; Screener wins when truthy.
@@ -425,7 +534,21 @@ if st.button("Analyze", type="primary") and symbol:
             data[k] = sc[k]
     shareholding = sc.get("shareholding")
 
-    analysis = run_analyses(data, shareholding, symbol)
+    # Persist so the analysis view survives reruns (sidebar chat, any widget).
+    st.session_state["last"] = {
+        "symbol": symbol, "exchange": exchange, "data": data, "sc": sc,
+        "shareholding": shareholding,
+        "analysis": run_analyses(data, shareholding, symbol),
+    }
+
+_last = st.session_state.get("last")
+if _last:
+    symbol, exchange = _last["symbol"], _last["exchange"]
+    data, sc, shareholding = _last["data"], _last["sc"], _last["shareholding"]
+    analysis = _last["analysis"]
+    price = data.get("priceData", {})
+    fund = data.get("fundamental", {})
+    cur = "₹" if exchange in ("NSE", "BSE") else "$"
 
     if data.get("name"):
         st.subheader(f"{data['name']} · {data.get('sector', '')}")

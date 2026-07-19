@@ -33,6 +33,11 @@ pymongo>=4.7.0
 # Password hashing for the Streamlit app's login/signup
 bcrypt>=4.1.0
 
+# Sidebar AI chat: GPT-4o-mini agent + Tavily web search, LangSmith tracing
+langchain>=1.0
+langchain-openai>=0.2
+langchain-tavily>=0.2
+
 # Jupyter / notebooks (optional, handy for exploratory analysis)
 notebook>=7.2.2
 ipykernel>=6.29.0
