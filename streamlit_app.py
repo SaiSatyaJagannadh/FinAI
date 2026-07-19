@@ -80,11 +80,12 @@ def _secret(name):
     v = os.environ.get(name)
     if v:
         return v
-    for key in (name, name.lower()):
-        try:
-            return st.secrets[key]
-        except Exception:
-            continue
+    try:
+        for k in st.secrets:
+            if k.lower() == name.lower():
+                return st.secrets[k]
+    except Exception:
+        pass
     return None
 
 
