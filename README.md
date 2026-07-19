@@ -189,3 +189,11 @@ https://finai-stock-analysis.streamlit.app/
 
 ## streamlit
 https://share.streamlit.io/
+
+
+## langsmith
+https://smith.langchain.com/o/73c9fa3f-e984-4805-8859-b4ffa11e2f94/projects?timeModel=%7B%22duration%22%3A%221d%22%7D
+
+## tavily websearch
+
+https://app.tavily.com/home
