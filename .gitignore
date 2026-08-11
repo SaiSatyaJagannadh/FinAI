@@ -37,3 +37,6 @@ server_test.js
 
 # Streamlit local secrets (contains Atlas creds — never commit)
 .streamlit/secrets.toml
+
+# Marketing draft, not part of the app
+linkedin-post.md
