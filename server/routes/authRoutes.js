@@ -12,13 +12,18 @@ if (!process.env.JWT_SECRET) {
   console.warn('JWT_SECRET not set — using a per-boot secret; logins will not survive a server restart');
 }
 
-// Seed the default admin user (idempotent). Called from server.js after DB connect.
+// Seed the admin user (idempotent). Called from server.js after DB connect.
+// No-op unless ADMIN_PASSWORD is set — a hardcoded admin/admin on a public
+// deployment is a free account for anyone who reads this repo.
 async function seedAdmin() {
-  const existing = await User.findOne({ username: 'admin' });
-  if (existing) return;
-  const passwordHash = await bcrypt.hash('admin', 10);
-  await User.create({ username: 'admin', passwordHash });
-  console.log('Seeded default admin user');
+  const password = process.env.ADMIN_PASSWORD;
+  if (!password || password.length < 8) {
+    if (password) console.warn('ADMIN_PASSWORD is shorter than 8 characters — admin not seeded');
+    return;
+  }
+  if (await User.findOne({ username: 'admin' })) return;
+  await User.create({ username: 'admin', passwordHash: await bcrypt.hash(password, 10) });
+  console.log('Seeded admin user from ADMIN_PASSWORD');
 }
 
 // POST /api/auth/login

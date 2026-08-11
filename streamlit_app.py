@@ -102,6 +102,54 @@ def _secret(name):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Abuse limits. This app is public and guest-usable: the AI chat spends real
+# OpenAI/Tavily credits and every Analyze shells out to yfinance + two scrapers.
+# Both a per-visitor and a global cap — the per-visitor one is only a speed bump
+# (a new browser session resets it), the global one is what actually bounds spend.
+# ---------------------------------------------------------------------------
+@st.cache_resource(show_spinner=False)
+def _rate_state():
+    """Process-wide hit log, shared across every user session."""
+    return {}
+
+
+def _session_id():
+    if "_sid" not in st.session_state:
+        import uuid
+        st.session_state["_sid"] = uuid.uuid4().hex
+    return st.session_state["_sid"]
+
+
+def _rate_ok(name, per_session, per_hour):
+    """Record a hit and return True if it's allowed. False once either the
+    caller's session cap or the app-wide hourly cap is reached.
+    ponytail: in-memory, resets on app reboot. Move to the Mongo `users`
+    collection if you ever need caps that survive a restart or a second replica."""
+    state, now = _rate_state(), time.time()
+    for bucket, limit, window in (
+        (f"{name}:{_session_id()}", per_session, 3600),
+        (f"{name}:global", per_hour, 3600),
+    ):
+        hits = [t for t in state.get(bucket, []) if now - t < window]
+        state[bucket] = hits
+        if len(hits) >= limit:
+            return False
+    for bucket in (f"{name}:{_session_id()}", f"{name}:global"):
+        state[bucket].append(now)
+    return True
+
+
+def _rate_left(name, per_session):
+    now = time.time()
+    used = len([t for t in _rate_state().get(f"{name}:{_session_id()}", []) if now - t < 3600])
+    return max(0, per_session - used)
+
+
+CHAT_PER_SESSION, CHAT_PER_HOUR = 15, 120
+ANALYZE_PER_SESSION, ANALYZE_PER_HOUR = 25, 300
+
+
 def _resolve_uri():
     return _secret("MONGODB_URI")
 
@@ -332,7 +380,9 @@ def _chat_agent():
         tools.append(TavilySearch(max_results=3))
     # store=True: requests also appear in platform.openai.com/logs (Chat
     # Completions tab, 30-day retention) alongside the LangSmith traces.
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, store=True)
+    # max_tokens caps the cost of any single reply — without it one "write me an
+    # essay" prompt is unbounded output spend.
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, store=True, max_tokens=700)
     return create_agent(llm, tools)
 
 
@@ -399,13 +449,21 @@ def _sidebar_chat():
         st.session_state.setdefault("chat", [])
         for m in st.session_state.chat:
             st.chat_message(m["role"]).write(m["content"])
-        q = st.chat_input("Ask about the analyzed stock or finance…")
+        left = _rate_left("chat", CHAT_PER_SESSION)
+        q = st.chat_input(f"Ask about the analyzed stock or finance… ({left} left)")
         if q:
-            with st.spinner("Thinking…"):
-                reply = _ask_agent(q)
+            q = q.strip()[:500]  # a pasted wall of text is pure token spend
+            if not _rate_ok("chat", CHAT_PER_SESSION, CHAT_PER_HOUR):
+                reply = ("You've hit the free usage limit for now — this is a personal "
+                         "demo running on my own API credits. Try again in an hour, or "
+                         "run your own copy from the GitHub repo linked below.")
+            else:
+                with st.spinner("Thinking…"):
+                    reply = _ask_agent(q)
             st.session_state.chat += [{"role": "user", "content": q},
                                       {"role": "assistant", "content": reply}]
             st.rerun()  # render the new turn above the input in order
+        st.caption(f"Limited to {CHAT_PER_SESSION} questions/hour — demo runs on personal API credits.")
 
 
 page = st.sidebar.radio("Page", ["Analyze", "Help & Details"])
@@ -535,6 +593,14 @@ def source_links(sym, exch):
 
 
 if st.button("Analyze", type="primary") and symbol:
+    if not _rate_ok("analyze", ANALYZE_PER_SESSION, ANALYZE_PER_HOUR):
+        st.warning(
+            f"Analysis limit reached ({ANALYZE_PER_SESSION}/hour). Each run hits yfinance, "
+            "Screener.in and FinViz live, so this demo throttles to stay a good citizen of "
+            "those sites. Try again in an hour — or clone the repo and run it locally with "
+            "no limits."
+        )
+        st.stop()
     try:
         data = fetch("stockDataService.py", [symbol, "--exchange", exchange, "--period", "1y"])
     except Exception as e:
@@ -1015,3 +1081,14 @@ if _last:
 
     src = "yfinance" + (" + Screener.in" if sc.get("success") else "")
     st.caption(f"Source: {src} ({data.get('symbol', symbol)}) · same scoring engine as the full FinAI app · cached 1h")
+
+st.divider()
+st.markdown(
+    '<div style="text-align:center;opacity:.75;font-size:.85rem;line-height:1.7">'
+    '<a href="https://github.com/SaiSatyaJagannadh/FinAI">⭐ Source on GitHub</a> · '
+    '<a href="https://finai-stock-analysis.streamlit.app/">🔗 Live app</a> · '
+    '<a href="mailto:saijagannadh0625@gmail.com">✉️ Contact</a><br>'
+    'Built by Sai Jagannadh · Educational tool, <b>not investment advice</b>.'
+    '</div>',
+    unsafe_allow_html=True,
+)

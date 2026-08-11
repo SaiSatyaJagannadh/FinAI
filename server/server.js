@@ -17,9 +17,24 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
+app.set('trust proxy', 1);           // Render terminates TLS upstream — req.ip must be the real client
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '64kb' }));
+app.use(express.urlencoded({ extended: true, limit: '64kb' }));
+
+// Rate limiting. Every /api/analysis call shells out to yfinance + two scrapers,
+// so unthrottled traffic burns upstream quota and gets our IP blocked.
+const rateLimit = require('./rateLimit');
+
+// Auth is stricter than the rest — this window is what makes password guessing impractical.
+app.use('/api/auth', rateLimit({
+  max: 10, windowMs: 15 * 60 * 1000,
+  message: 'Too many login attempts. Try again in 15 minutes.',
+}));
+app.use('/api', rateLimit({
+  max: 60, windowMs: 15 * 60 * 1000,
+  message: 'Too many requests. Try again in a few minutes.',
+}));
 
 // Database connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/financialai', {

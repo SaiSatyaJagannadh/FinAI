@@ -1,6 +1,15 @@
-# Financial AI Agents
+# FinAI — Financial AI Agents
 
-A comprehensive stock analysis platform that combines fundamental analysis, technical analysis, mutual fund conviction analysis, growth projections, and risk assessment to provide data-driven investment recommendations.
+**▶ [Try the live app](https://finai-stock-analysis.streamlit.app/)** — no signup required.
+
+A stock analysis platform that scores a company across five independent engines — fundamental,
+technical, mutual-fund conviction, growth and risk — and blends them into one BUY / HOLD / SELL
+call with year-wise price projections, an economic-moat checklist and a sector outlook.
+
+Works for **NSE / BSE (India)** and **US** listings.
+
+> Educational tool. Not investment advice — the projections are mechanical extrapolations,
+> not forecasts.
 
 ## Features
 
@@ -34,11 +43,20 @@ A comprehensive stock analysis platform that combines fundamental analysis, tech
 - **Axios** for HTTP requests
 
 ### Data Sources
-- Money Control (Indian market data)
-- Trendlyne (mutual fund portfolio data)
-- NSE/BSE (stock exchange data)
-- Company filings and financial statements
-- News and social media sentiment
+- **yfinance** — price history, valuation ratios, growth, analyst mean target
+- **Screener.in** — Indian fundamentals and promoter/FII/DII shareholding (consolidated pages)
+- **FinViz** — US analyst targets and forward EPS estimates
+
+Every response reports its `dataSources`, so you always know whether a number came from a live
+feed or a fallback.
+
+### Abuse / cost controls
+The public demo runs on personal API credits, so both surfaces are throttled:
+- **Node API** — 60 requests / 15 min per IP; `/api/auth` is capped at 10 / 15 min to make
+  password guessing impractical (`server/rateLimit.js`).
+- **Streamlit app** — 15 AI-chat questions and 25 analyses per visitor per hour, plus an
+  app-wide hourly ceiling; replies are token-capped.
+- The admin account is only seeded when `ADMIN_PASSWORD` is set — there is no default login.
 
 ## Getting Started
 
@@ -51,8 +69,8 @@ A comprehensive stock analysis platform that combines fundamental analysis, tech
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/financial-ai-agents.git
-cd financial-ai-agents
+git clone https://github.com/SaiSatyaJagannadh/FinAI.git
+cd FinAI
 ```
 
 2. Install backend dependencies
