@@ -27,6 +27,11 @@ lxml>=5.0.0
 textblob>=0.17.1
 nltk>=3.8.1   # after installing, run: python -m nltk.downloader punkt stopwords wordnet
 
+# The Streamlit frontend itself. Streamlit Cloud and the devcontainer both
+# provide it implicitly, which hid the fact that it was never declared — anyone
+# cloning the repo and running `pip install -r requirements.txt` got no streamlit.
+streamlit>=1.40
+
 # MongoDB driver (if you ever need to talk Mongo from Python)
 pymongo>=4.7.0
 

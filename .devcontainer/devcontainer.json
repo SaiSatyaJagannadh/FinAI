@@ -17,7 +17,11 @@
       ]
     }
   },
-  "updateContentCommand": "[ -f packages.txt ] && sudo apt update && sudo apt upgrade -y && sudo xargs apt install -y <packages.txt; [ -f requirements.txt ] && pip3 install --user -r requirements.txt; pip3 install --user streamlit; echo '✅ Packages installed and Requirements met'",
+  // No `apt upgrade -y`: it rebuilds every system package on each container
+  // build for zero benefit here, and Codespaces bills that time against your
+  // monthly core-hours. `apt install nodejs` (from packages.txt) is required —
+  // the five scoring engines are Node, so without it the app runs data-only.
+  "updateContentCommand": "[ -f packages.txt ] && sudo apt-get update && sudo xargs apt-get install -y <packages.txt; [ -f requirements.txt ] && pip3 install --user -r requirements.txt; echo '✅ Packages installed and Requirements met'",
   "postAttachCommand": {
     "server": "streamlit run streamlit_app.py --server.enableCORS false --server.enableXsrfProtection false"
   },
