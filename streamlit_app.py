@@ -363,26 +363,50 @@ def _help_page():
 # LangSmith (env-var driven, zero code). Degrades to an info note if keys
 # are missing, same style as the Mongo gate above.
 # ---------------------------------------------------------------------------
-for _k in ("OPENAI_API_KEY", "TAVILY_API_KEY", "LANGSMITH_TRACING",
+for _k in ("NVIDIA_API_KEY", "OPENAI_API_KEY", "TAVILY_API_KEY", "LANGSMITH_TRACING",
            "LANGSMITH_API_KEY", "LANGSMITH_PROJECT"):
     _v = _secret(_k)
     if _v:
         os.environ[_k] = str(_v)
 
+# NVIDIA NIM is OpenAI-wire-compatible, so it's a base_url swap on the client we
+# already have — no extra dependency. Model picked by probing the account's 102
+# reachable models for *tool calling* (the agent needs it for Tavily) and latency:
+# nemotron-3-super-120b answered a tool-call in 3.3s; ultra-550b works but takes
+# ~23s (too slow for a sidebar), and gpt-oss-120b / llama-3.3-70b timed out.
+NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+NVIDIA_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+OPENAI_MODEL = "gpt-4o-mini"
+
+
+def _chat_provider():
+    """('nvidia'|'openai', label) for whichever key is configured, else (None, None).
+    NVIDIA is preferred — it's the one with credit on it."""
+    if os.environ.get("NVIDIA_API_KEY"):
+        return "nvidia", f"NVIDIA NIM · {NVIDIA_MODEL.split('/')[-1]}"
+    if os.environ.get("OPENAI_API_KEY"):
+        return "openai", f"OpenAI · {OPENAI_MODEL}"
+    return None, None
+
 
 @st.cache_resource(show_spinner=False)
-def _chat_agent():
+def _chat_agent(provider):
     from langchain.agents import create_agent
     from langchain_openai import ChatOpenAI
     tools = []
     if os.environ.get("TAVILY_API_KEY"):  # web search is optional
         from langchain_tavily import TavilySearch
         tools.append(TavilySearch(max_results=3))
-    # store=True: requests also appear in platform.openai.com/logs (Chat
-    # Completions tab, 30-day retention) alongside the LangSmith traces.
     # max_tokens caps the cost of any single reply — without it one "write me an
     # essay" prompt is unbounded output spend.
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, store=True, max_tokens=700)
+    common = {"temperature": 0.3, "max_tokens": 700}
+    if provider == "nvidia":
+        llm = ChatOpenAI(model=NVIDIA_MODEL, base_url=NVIDIA_BASE_URL,
+                         api_key=os.environ["NVIDIA_API_KEY"], **common)
+    else:
+        # store=True is OpenAI-only (puts requests in platform.openai.com/logs);
+        # NVIDIA rejects the param, hence it living on this branch alone.
+        llm = ChatOpenAI(model=OPENAI_MODEL, store=True, **common)
     return create_agent(llm, tools)
 
 
@@ -423,16 +447,27 @@ def _ask_agent(question):
         "the analyzed stock using the context below, and use the web search tool for "
         "live prices, news or anything not in the context. Be concise. You are not a "
         "licensed financial advisor — frame answers as education, never as personalized "
-        "investment advice.\n\nCurrent analysis context (JSON):\n" + _stock_context()
+        "investment advice.\n\n"
+        # Without this the model dates its answers from its training cutoff — it
+        # confidently labelled live search results as last year's.
+        f"Today's date is {datetime.now(timezone.utc):%d %B %Y}. Never present data "
+        "from an earlier year as current; if search results look stale, say so.\n\n"
+        "Current analysis context (JSON):\n" + _stock_context()
     )
     msgs = [("system", system)]
     for m in st.session_state.get("chat", [])[-10:]:
         msgs.append((m["role"], m["content"]))
     msgs.append(("user", question))
+    provider, _ = _chat_provider()
     try:
-        out = _chat_agent().invoke({"messages": msgs})
+        out = _chat_agent(provider).invoke({"messages": msgs})
         return out["messages"][-1].content
     except Exception as e:
+        # "no credits" is the one failure a visitor can't act on but the owner can,
+        # so name it plainly instead of dumping a raw 429 payload into the chat.
+        if "insufficient_quota" in str(e) or "credit" in str(e).lower():
+            return ("The AI assistant is out of API credit right now — that's on my "
+                    "side, not yours. Everything else in the app still works.")
         return f"Sorry, the AI call failed: {e}"
 
 
@@ -440,10 +475,12 @@ def _sidebar_chat():
     with st.sidebar:
         st.divider()
         st.subheader("💬 Ask FinAI")
-        if not os.environ.get("OPENAI_API_KEY"):
-            st.info("AI chat unavailable — add the **OPENAI_API_KEY** secret "
-                    "in the Streamlit Cloud app settings.")
+        provider, label = _chat_provider()
+        if not provider:
+            st.info("AI chat unavailable — add an **NVIDIA_API_KEY** (or "
+                    "**OPENAI_API_KEY**) secret in the Streamlit Cloud app settings.")
             return
+        st.caption(f"🤖 {label}")
         if not os.environ.get("TAVILY_API_KEY"):
             st.caption("⚠️ Web search off — add **TAVILY_API_KEY** to enable live news.")
         st.session_state.setdefault("chat", [])

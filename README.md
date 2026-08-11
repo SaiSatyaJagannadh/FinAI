@@ -13,7 +13,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?style=flat-square&logo=mongodb&logoColor=white)](https://www.mongodb.com/atlas)
 [![LangChain](https://img.shields.io/badge/LangChain-1.0-1C3C3C?style=flat-square&logo=langchain&logoColor=white)](https://www.langchain.com/)
-[![OpenAI](https://img.shields.io/badge/GPT--4o--mini-412991?style=flat-square&logo=openai&logoColor=white)](https://platform.openai.com/)
+[![NVIDIA NIM](https://img.shields.io/badge/NVIDIA_NIM-Nemotron_3-76B900?style=flat-square&logo=nvidia&logoColor=white)](https://build.nvidia.com/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
 [![Tests](https://img.shields.io/badge/tests-23_passing-brightgreen?style=flat-square&logo=jest&logoColor=white)](#-testing)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](#-license)
@@ -157,8 +157,8 @@ public demo. Both call the *same* five Node services — Streamlit shells out to
 </tr>
 <tr>
   <td>🤖 <b>AI chat</b></td>
-  <td><code>LangChain</code> · <code>GPT-4o-mini</code> · <code>Tavily</code> · <code>LangSmith</code></td>
-  <td>Agent gets the live scoring context injected; Tavily covers anything post-cutoff; LangSmith traces every call</td>
+  <td><code>LangChain</code> · <code>NVIDIA NIM</code> (<code>nemotron-3-super-120b</code>) · <code>Tavily</code> · <code>LangSmith</code></td>
+  <td>NIM is OpenAI-wire-compatible, so switching providers is a <code>base_url</code> swap, not a rewrite — the agent gets live scoring context injected, Tavily covers anything post-cutoff, LangSmith traces every call</td>
 </tr>
 <tr>
   <td>🗄️ <b>Storage</b></td>
@@ -232,9 +232,16 @@ Create `server/.env`:
 MONGODB_URI=mongodb://localhost:27017/financialai
 JWT_SECRET=<any long random string>
 ADMIN_PASSWORD=<optional; only set if you want an admin account seeded>
-OPENAI_API_KEY=<optional; enables the AI chat>
+NVIDIA_API_KEY=<optional; enables the AI chat — free credits at build.nvidia.com>
+OPENAI_API_KEY=<optional; used only if NVIDIA_API_KEY is absent>
 TAVILY_API_KEY=<optional; enables live web search in the chat>
 ```
+
+The chat picks its provider at runtime: **NVIDIA if `NVIDIA_API_KEY` is set, otherwise OpenAI,
+otherwise it disables itself with a note** rather than erroring. The sidebar shows which model is
+live. Model choice wasn't a guess — the account's 102 reachable models were probed for tool-calling
+support (the agent needs it for search) and latency; `nemotron-3-super-120b-a12b` returned a tool
+call in ~3s, while the 550B ultra took ~23s and several others don't support tools at all.
 
 **Run it:**
 

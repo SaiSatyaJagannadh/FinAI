@@ -14,7 +14,10 @@ APP = str(ROOT / "streamlit_app.py")
 
 EXPECTED_TABS = ["📈 Growth Projection", "🏰 Moat & Sector", "Fundamental",
                  "Technical", "Growth", "MF Conviction", "Risk"]
-YEAR_COLS = [f"{y}Y price" for y in (1, 2, 3, 4, 5, 10)]
+# Guest mode renders a sidebar "Log in / Sign up" expander whose tabs land in the
+# same at.tabs list — filter them out before asserting on the analysis tabs.
+SIDEBAR_TABS = {"Log in", "Sign up"}
+YEAR_COLS = [f"{y}Y" for y in (1, 2, 3, 5, 10)]
 
 results = []
 
@@ -25,6 +28,11 @@ def record(name, ok, detail=""):
 
 
 def price_to_float(s):
+    return float(re.sub(r"[^\d.\-]", "", str(s)))
+
+
+def pct_to_float(s):
+    """'Growth/yr' renders as a formatted string like '+12.3%'."""
     return float(re.sub(r"[^\d.\-]", "", str(s)))
 
 
@@ -70,7 +78,7 @@ def check_happy_path(sym, exch):
         return
 
     # Tab order/labels — Growth Projection first, Moat & Sector new
-    labels = [t.label for t in at.tabs]
+    labels = [t.label for t in at.tabs if t.label not in SIDEBAR_TABS]
     record(f"{tag}: tabs == expected (projection first, moat present)",
            labels == EXPECTED_TABS, f"got {labels}")
 
@@ -80,27 +88,28 @@ def check_happy_path(sym, exch):
     else:
         df = at.dataframe[0].value
         cols = list(df.columns)
-        missing = [c for c in YEAR_COLS + ["Scenario", "Growth %/yr",
-                                           "Why it grows (or shrinks)", "Source"]
+        missing = [c for c in YEAR_COLS + ["Scenario", "Growth/yr", "Source"]
                    if c not in cols]
-        record(f"{tag}: projection has 1Y-10Y/why/source columns", not missing,
+        record(f"{tag}: projection has 1Y-10Y/growth/source columns", not missing,
                f"missing {missing}; got {cols}")
-        base = str(df.iloc[0]["Scenario"])
-        record(f"{tag}: first row is base case",
-               base.startswith("★ Base case"), f"first row: {base!r}")
+        # The per-scenario "why" moved out of the table into an expander below it.
+        md_all = "\n".join(m.value for m in at.markdown)
+        record(f"{tag}: scenario rationale rendered", "Each scenario, year by year" in md_all)
+        # Headline cards summarise the median scenario at 1/3/5/10Y.
+        record(f"{tag}: median-growth headline cards", "If growth averages" in md_all)
         # price path direction must match growth sign for every row
         bad = []
         for _, row in df.iterrows():
-            p1, p10 = price_to_float(row["1Y price"]), price_to_float(row["10Y price"])
-            g = float(row["Growth %/yr"])
+            p1, p10 = price_to_float(row["1Y"]), price_to_float(row["10Y"])
+            g = pct_to_float(row["Growth/yr"])
             if g > 0 and not p10 > p1:
                 bad.append((row["Scenario"], g, p1, p10))
             if g < 0 and not p10 < p1:
                 bad.append((row["Scenario"], g, p1, p10))
         record(f"{tag}: price paths follow growth sign (neg growth declines)",
                not bad, f"violations: {bad}")
-        neg = df[df["Growth %/yr"] < 0]
-        if len(neg):
+        neg = [r for _, r in df.iterrows() if pct_to_float(r["Growth/yr"]) < 0]
+        if neg:
             record(f"{tag}: negative-growth rows present and declining", True,
                    f"{len(neg)} declining scenario(s)")
 
@@ -139,9 +148,12 @@ def check_unknown_symbol(sym, exch):
                 "nseindia.com/get-quotes"]
     missing = [w for w in want if w not in md]
     record(f"{tag}: redirect links", not missing, f"missing {missing}")
-    # st.stop() means no tabs / metrics render after the error
-    record(f"{tag}: stopped before analysis UI", len(at.tabs) == 0 and len(at.metric) == 0,
-           f"tabs={len(at.tabs)} metrics={len(at.metric)}")
+    # st.stop() means no analysis tabs / metrics render after the error
+    # (the sidebar login expander's own tabs are not part of the analysis UI)
+    analysis_tabs = [t.label for t in at.tabs if t.label not in SIDEBAR_TABS]
+    record(f"{tag}: stopped before analysis UI",
+           len(analysis_tabs) == 0 and len(at.metric) == 0,
+           f"tabs={analysis_tabs} metrics={len(at.metric)}")
 
 
 if __name__ == "__main__":
