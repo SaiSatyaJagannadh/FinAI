@@ -1,217 +1,413 @@
-# FinAI — Financial AI Agents
+<div align="center">
 
-**▶ [Try the live app](https://finai-stock-analysis.streamlit.app/)** — no signup required.
+# 📈 FinAI — Financial AI Agents
 
-A stock analysis platform that scores a company across five independent engines — fundamental,
-technical, mutual-fund conviction, growth and risk — and blends them into one BUY / HOLD / SELL
-call with year-wise price projections, an economic-moat checklist and a sector outlook.
+### Five independent scoring engines. One BUY / HOLD / SELL. All the working shown.
 
-Works for **NSE / BSE (India)** and **US** listings.
+[![Live App](https://img.shields.io/badge/▶_Live_App-Try_it_now-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://finai-stock-analysis.streamlit.app/)
+[![Source](https://img.shields.io/badge/⭐_Source-GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/SaiSatyaJagannadh/FinAI)
 
-> Educational tool. Not investment advice — the projections are mechanical extrapolations,
-> not forecasts.
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?style=flat-square&logo=mongodb&logoColor=white)](https://www.mongodb.com/atlas)
+[![LangChain](https://img.shields.io/badge/LangChain-1.0-1C3C3C?style=flat-square&logo=langchain&logoColor=white)](https://www.langchain.com/)
+[![OpenAI](https://img.shields.io/badge/GPT--4o--mini-412991?style=flat-square&logo=openai&logoColor=white)](https://platform.openai.com/)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Tests](https://img.shields.io/badge/tests-23_passing-brightgreen?style=flat-square&logo=jest&logoColor=white)](#-testing)
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](#-license)
 
-## Features
+**🇮🇳 NSE / BSE** &nbsp;·&nbsp; **🇺🇸 US markets** &nbsp;·&nbsp; **No signup required**
 
-### Core Analysis Modules
-- **Fundamental Analysis**: P/E ratios, PEG ratio, profitability metrics, financial health indicators
-- **Technical Analysis**: Moving averages, RSI, MACD, Bollinger Bands, volume analysis
-- **Mutual Fund Conviction**: Tracks institutional ownership and portfolio movements
-- **Growth Analysis**: Revenue, profit, EPS growth trends and projections
-- **Risk Assessment**: Market, credit, liquidity, operational, sector, geopolitical, and disruption risks
+</div>
 
-### User Interface
-- Clean, responsive design
-- Interactive dashboard with visualizations
-- Stock search and analysis
-- Portfolio management (planned)
-- Watchlist functionality (planned)
-- Historical analysis tracking (planned)
+> [!WARNING]
+> **Educational tool — not investment advice.** The projections are mechanical extrapolations
+> (current price grown at a source's growth rate, constant P/E assumed), not forecasts.
+> Always read the primary filings, which the app links for every stock.
 
-## Technology Stack
+---
 
-### Backend
-- **Node.js** with Express.js
-- **MongoDB** for data storage
-- **RESTful API** architecture
-- **AI Services**: Modular analysis engines for each component
+## 🎯 What makes it different
 
-### Frontend
-- **React** with Hooks
-- **React Router** for navigation
-- **CSS3** for styling
-- **Axios** for HTTP requests
+Most screeners hand you a single number and expect trust. FinAI shows its work — and disagrees
+with itself in public when the engines don't line up.
 
-### Data Sources
-- **yfinance** — price history, valuation ratios, growth, analyst mean target
-- **Screener.in** — Indian fundamentals and promoter/FII/DII shareholding (consolidated pages)
-- **FinViz** — US analyst targets and forward EPS estimates
+| | Typical screener | **FinAI** |
+|---|---|---|
+| **Verdict** | One opaque score | 🟢 Five separate scores + the blend, so you see *which* pillar is dragging |
+| **Benchmarks** | One global average | Per-sector benchmarks — an IT company's 25x P/E isn't judged like a bank's |
+| **Data sourcing** | Single vendor feed | 3 sources cross-merged; Screener.in **overrides** stale yfinance ratios |
+| **Failure mode** | Blank page or a lie | Best-effort enrichment — a scraper timeout degrades output, never fails the request |
+| **Ownership flows** | Rarely shown | Promoter / FII / DII stake **and quarterly deltas** — informed money's direction |
+| **Horizon** | Today's snapshot | Year-wise 1Y–10Y paths under bull / base / bear growth scenarios |
+| **Moat** | Not modelled | Explicit economic-moat checklist + sector CAGR outlook |
+| **AI chat** | Bolted-on generic bot | Assistant preloaded with *your analyzed stock's* full scoring context |
+| **Trust** | "Trust the model" | Every response reports `dataSources` — you always know live vs. fallback |
 
-Every response reports its `dataSources`, so you always know whether a number came from a live
-feed or a fallback.
+The one I'm proudest of: **two completely different frontends (React and Streamlit) share the same
+scoring engine, and a test asserts both paths produce identical output.** That parity test has
+caught more real bugs than anything else in the repo.
 
-### Abuse / cost controls
-The public demo runs on personal API credits, so both surfaces are throttled:
-- **Node API** — 60 requests / 15 min per IP; `/api/auth` is capped at 10 / 15 min to make
-  password guessing impractical (`server/rateLimit.js`).
-- **Streamlit app** — 15 AI-chat questions and 25 analyses per visitor per hour, plus an
-  app-wide hourly ceiling; replies are token-capped.
-- The admin account is only seeded when `ADMIN_PASSWORD` is set — there is no default login.
+---
 
-## Getting Started
+## 🧮 The five engines
 
-### Prerequisites
-- Node.js (v16+)
-- MongoDB
-- npm or yarn
+| Engine | Weight | What it reads |
+|---|:---:|---|
+| 🔵 **Fundamental** | `25%` | P/E (trailing & forward), PEG, P/B, ROE, ROA, margins, debt-to-equity, current ratio — each scored against its **sector's** benchmark |
+| 🟣 **Growth** | `25%` | YoY + QoQ revenue, profit, EPS, book-value and dividend growth; last 8 quarters; consistency and sustainability |
+| 🟠 **Technical** | `20%` | RSI, MACD, SMA/EMA trend, Bollinger Bands, volume trend, support/resistance |
+| 🟢 **MF Conviction** | `15%` | Promoter / FII / DII / MF shareholding % and quarterly change — accumulation vs. distribution |
+| 🔴 **Risk** | `15%` | Beta, volatility, leverage, interest coverage, liquidity, sector, geopolitical and disruption risk |
 
-### Installation
+All five are **higher = better** (including risk, where a higher score means safer — no inversion
+anywhere). `recommendation.js` blends them at the weights above into the final call, target price
+and stop-loss.
 
-1. Clone the repository
+Plus: **Growth Projection** (1Y–10Y price paths), **Moat & Sector** (checklist + CAGR outlook),
+and a **sidebar AI assistant**.
+
+---
+
+## 🏗️ Architecture
+
+One HTTP request fans out across two languages and three data sources:
+
+```mermaid
+flowchart TD
+    A["🌐 React app<br/>(Render)"] --> C
+    B["📊 Streamlit app<br/>(Streamlit Cloud)"] --> D
+
+    C["⚙️ Express<br/>POST /api/analysis/:symbol"] --> D["🐍 Python data layer"]
+
+    D --> E["yfinance<br/><i>price · ratios · growth</i>"]
+    D --> F["Screener.in<br/><i>IN fundamentals · shareholding</i>"]
+    D --> G["FinViz<br/><i>US targets · fwd EPS</i>"]
+
+    E --> H["🔀 Merged stockData<br/><i>Screener wins on conflict</i>"]
+    F --> H
+    G --> H
+
+    H --> I["🔵 Fundamental"]
+    H --> J["🟣 Growth"]
+    H --> K["🟠 Technical"]
+    H --> L["🟢 MF Conviction"]
+    H --> M["🔴 Risk"]
+
+    I --> N["⚖️ recommendation.js<br/><b>BUY / HOLD / SELL</b>"]
+    J --> N
+    K --> N
+    L --> N
+    M --> N
+
+    N --> O["🗄️ MongoDB Atlas<br/><i>1h cache</i>"]
+
+    classDef ui fill:#6366f1,stroke:#4338ca,color:#fff
+    classDef py fill:#3776AB,stroke:#1e4d6b,color:#fff
+    classDef src fill:#f59e0b,stroke:#b45309,color:#fff
+    classDef eng fill:#10b981,stroke:#047857,color:#fff
+    classDef out fill:#ef4444,stroke:#b91c1c,color:#fff
+    classDef db fill:#47A248,stroke:#2d6b2d,color:#fff
+
+    class A,B,C ui
+    class D,H py
+    class E,F,G src
+    class I,J,K,L,M eng
+    class N out
+    class O db
+```
+
+**Why two frontends?** The React app is the full product; the Streamlit app is a zero-friction
+public demo. Both call the *same* five Node services — Streamlit shells out to
+`server/services/analysisRunner.js`, a dependency-free stdin→stdout runner that shares
+`recommendation.js` with the Express route. `tests/analysisRunner.parity.test.js` keeps them honest.
+
+---
+
+## 🧰 Tech stack
+
+<table>
+<tr><th align="left">Layer</th><th align="left">Tools</th><th align="left">Why this one</th></tr>
+<tr>
+  <td>🐍 <b>Data</b></td>
+  <td><code>yfinance</code> · <code>BeautifulSoup4</code> · <code>lxml</code> · <code>pandas</code></td>
+  <td>yfinance is free and global; Screener.in has Indian shareholding no API sells cheaply, so it's scraped</td>
+</tr>
+<tr>
+  <td>⚙️ <b>Scoring</b></td>
+  <td><code>Node.js</code> · plain JS modules</td>
+  <td>Pure functions, no framework — which is exactly why the same files run under both Express and Streamlit</td>
+</tr>
+<tr>
+  <td>🌐 <b>API</b></td>
+  <td><code>Express</code> · <code>Mongoose</code> · <code>JWT</code> · <code>bcryptjs</code></td>
+  <td>Boring and battle-tested; rate limiter is hand-rolled (12 lines) rather than a new dependency</td>
+</tr>
+<tr>
+  <td>⚛️ <b>Web UI</b></td>
+  <td><code>React 18</code> · <code>React Router</code> · <code>Axios</code></td>
+  <td>Component-per-analysis-tab maps 1:1 onto the five engines</td>
+</tr>
+<tr>
+  <td>📊 <b>Demo UI</b></td>
+  <td><code>Streamlit</code></td>
+  <td>Full second frontend in ~1000 lines, deploys on push, no build step</td>
+</tr>
+<tr>
+  <td>🤖 <b>AI chat</b></td>
+  <td><code>LangChain</code> · <code>GPT-4o-mini</code> · <code>Tavily</code> · <code>LangSmith</code></td>
+  <td>Agent gets the live scoring context injected; Tavily covers anything post-cutoff; LangSmith traces every call</td>
+</tr>
+<tr>
+  <td>🗄️ <b>Storage</b></td>
+  <td><code>MongoDB Atlas</code></td>
+  <td>Schema-loose responses cache cleanly as documents; 1h TTL per stock</td>
+</tr>
+<tr>
+  <td>🚀 <b>Deploy</b></td>
+  <td><code>Docker</code> · <code>Render</code> · <code>Streamlit Cloud</code></td>
+  <td>One Docker service serves API + built React; Streamlit auto-redeploys from <code>main</code></td>
+</tr>
+<tr>
+  <td>🧪 <b>Tests</b></td>
+  <td><code>Jest</code> · <code>Streamlit AppTest</code></td>
+  <td>Scoring, cross-runtime parity, rate limiting, and a live end-to-end smoke</td>
+</tr>
+</table>
+
+---
+
+## 📡 Data sources
+
+| Source | Provides | Coverage |
+|---|---|---|
+| 🟪 **yfinance** | Price history, valuation ratios, growth, analyst mean target | Global |
+| 🟩 **Screener.in** | Fundamentals + promoter/FII/DII shareholding (consolidated pages) | 🇮🇳 NSE / BSE |
+| 🟦 **FinViz** | Analyst targets, forward & 5Y EPS estimates | 🇺🇸 US |
+
+Screener and FinViz are **best-effort enrichment** — they overwrite yfinance only where they return
+a truthy value, and a failure degrades the response instead of breaking it. Every response reports
+its `dataSources`, so a fallback is never mistaken for a live feed.
+
+---
+
+## 🔐 Security & cost controls
+
+The public demo runs on **personal API credits**, so both surfaces are throttled:
+
+| Surface | Limit |
+|---|---|
+| 🤖 Streamlit AI chat | 15/hr per visitor · 120/hr app-wide · 500-char questions · `max_tokens=700` |
+| 📊 Streamlit analyze | 25/hr per visitor · 300/hr app-wide |
+| 🌐 Node `/api/*` | 60 requests / 15 min per IP |
+| 🔑 Node `/api/auth` | 10 / 15 min per IP — makes password guessing impractical |
+
+Also: no default admin account (seeded only when `ADMIN_PASSWORD` is set), `execFile` instead of
+`exec` with regex-validated symbols so user input never reaches a shell, bcrypt-hashed passwords,
+64 KB request body cap, and identical error text for unknown-user vs. wrong-password so the API
+doesn't leak which accounts exist.
+
+---
+
+## 🚀 Getting started
+
+**Prerequisites** — Node.js 16+, Python 3.10+, MongoDB (local or Atlas)
+
 ```bash
 git clone https://github.com/SaiSatyaJagannadh/FinAI.git
 cd FinAI
+
+# JS deps (root + client)
+npm install && npm install --prefix client
+
+# Python deps
+python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 ```
 
-2. Install backend dependencies
+Create `server/.env`:
+
 ```bash
-cd server
-npm install
+MONGODB_URI=mongodb://localhost:27017/financialai
+JWT_SECRET=<any long random string>
+ADMIN_PASSWORD=<optional; only set if you want an admin account seeded>
+OPENAI_API_KEY=<optional; enables the AI chat>
+TAVILY_API_KEY=<optional; enables live web search in the chat>
 ```
 
-3. Install frontend dependencies
+**Run it:**
+
 ```bash
-cd ../client
-npm install
+npm run dev                              # React (3000) + Express (5000)
+.venv/bin/streamlit run streamlit_app.py # Streamlit demo (8501)
 ```
 
-4. Set up environment variables
-Create a `.env` file in the root directory based on the `.env.example` template
+**Debug the data layer directly** — fastest way to chase a bad number:
 
-5. Start the development servers
 ```bash
-# In root directory
-npm run dev
+.venv/bin/python3 services/stockDataService.py INFY --exchange NSE --period 1y --json
+.venv/bin/python3 services/screenerService.py INFY --json
+.venv/bin/python3 services/finvizService.py AAPL --json   # US only
 ```
 
-This will start both the backend (port 5000) and frontend (port 3000) servers.
+---
 
-## Deployment (Render)
+## 🧪 Testing
 
-The app deploys as a single Docker service (Node + Python, Express serves the React build).
+```bash
+npm test                                        # Jest — scoring, runner parity, projections, rate limiting
+.venv/bin/python3 tests/test_streamlit_app.py   # live end-to-end smoke
+```
 
-1. Push this repo to GitHub.
-2. In [MongoDB Atlas](https://cloud.mongodb.com) → Network Access → add `0.0.0.0/0` (allow from anywhere) so Render can connect.
-3. On [Render](https://render.com): **New → Blueprint**, pick this repo — it reads `render.yaml`.
-4. When prompted, set the `MONGODB_URI` environment variable (same value as in `server/.env`).
-5. Deploy. The app is live at `https://<service-name>.onrender.com`.
+| Suite | Covers |
+|---|---|
+| `scoringServices.test.js` | The five engines' scoring maths |
+| `analysisRunner.parity.test.js` | **Streamlit output == Express output** |
+| `projectionMoat.test.js` | Year-wise projections + moat checklist |
+| `rateLimit.test.js` | Limits, window expiry, per-IP isolation |
+| `test_streamlit_app.py` | Full app against live yfinance/Screener/FinViz |
 
-Test locally with Docker:
+> A Yahoo `429` in the smoke test is an environment flake, not a bug.
+
+---
+
+## 🌍 Deployment
+
+<table>
+<tr><th align="left">Target</th><th align="left">What ships</th></tr>
+<tr>
+  <td>🟦 <b>Render</b></td>
+  <td>One Docker service — Node builds the React app and Express serves the static bundle.
+      Python deps come from the trimmed <code>requirements-deploy.txt</code>. Blueprint reads <code>render.yaml</code>.</td>
+</tr>
+<tr>
+  <td>🟥 <b>Streamlit Cloud</b></td>
+  <td><code>streamlit_app.py</code> from <code>main</code>, auto-redeploying on push.
+      Root <code>requirements.txt</code> + <code>packages.txt</code> (apt-installs nodejs so the scoring engine runs).</td>
+</tr>
+</table>
+
+Both need `MONGODB_URI`, and Atlas **Network Access** must allow `0.0.0.0/0`.
+
 ```bash
 docker build -t finai .
-docker run -p 5000:5000 -e MONGODB_URI="<your atlas uri>" finai
-# open http://localhost:5000
+docker run -p 5000:5000 -e MONGODB_URI="<atlas uri>" finai   # http://localhost:5000
 ```
 
-Note: the free tier sleeps after 15 min idle; first request after sleep takes ~1 min.
+> Render's free tier sleeps after 15 min idle — the first request back takes ~1 min.
 
-## API Endpoints
+---
 
-### Stock Analysis
-- `POST /api/analysis/:symbol` - Perform comprehensive stock analysis
-- `GET /api/analysis/:symbol/history` - Get analysis history for a stock
+## 📡 API reference
 
-### Stock Information
-- `GET /api/stocks/:symbol` - Get stock information
-- `GET /api/stocks?search=:query` - Search for stocks
-- `POST /api/stocks/batch` - Get multiple stocks by symbols
+| Method | Endpoint | Purpose |
+|:---:|---|---|
+| `POST` | `/api/analysis/:symbol` | Full five-engine analysis (`{ exchange, forceRefresh }`) |
+| `GET` | `/api/analysis/:symbol/history` | Past analyses for a stock |
+| `GET` | `/api/stocks/:symbol` | Stock metadata |
+| `GET` | `/api/stocks?search=:query` | Symbol search |
+| `POST` | `/api/stocks/batch` | Several stocks at once |
+| `POST` | `/api/auth/register` · `/api/auth/login` | Accounts (returns a JWT) |
+| `GET` `POST` | `/api/portfolio` | List / create portfolios |
+| `GET` | `/api/portfolio/:id` | One portfolio |
+| `POST` `DELETE` | `/api/portfolio/:id/stocks[/:stockId]` | Add / remove holdings |
+| `PUT` | `/api/portfolio/:id/allocate` | Update allocation |
+| `GET` | `/api/health` | Health check |
 
-### Portfolio Management
-- `GET /api/portfolios` - Get user portfolios
-- `GET /api/portfolios/:id` - Get specific portfolio
-- `POST /api/portfolios` - Create new portfolio
-- `POST /api/portfolios/:id/stocks` - Add stock to portfolio
-- `DELETE /api/portfolios/:id/stocks/:stockId` - Remove stock from portfolio
-- `PUT /api/portfolios/:id/allocate` - Update portfolio allocation
+---
 
-## Project Structure
+## 📁 Project structure
 
 ```
-financial-ai-agents/
-├── client/                  # React frontend
-│   ├── public/
-│   └── src/
-│       ├── components/      # Reusable components
-│       ├── pages/           # Page components
-│       ├── services/        # API service calls
-│       └── App.js
-├── server/                  # Server
-│   ├── models/        # Database models
-│   ├── routes/              # API routes
-│   ├── services/            # Business logic (AI analysis engines)
-│   ├── server.js            # Entry point
-│   └── .env                 # Environment variables
-└── package.json             # Root package.json
+FinAI/
+├── 🐍 services/                    # Python data layer
+│   ├── stockDataService.py         #   yfinance — price, ratios, growth, history
+│   ├── screenerService.py          #   Screener.in scraper (IN fundamentals + shareholding)
+│   ├── finvizService.py            #   FinViz scraper (US targets, forward EPS)
+│   └── sector_map.py               #   free-form sector → canonical benchmark key
+├── ⚙️ server/
+│   ├── services/                   # ← the five scoring engines + recommendation.js
+│   │   └── analysisRunner.js       #   stdin→stdout runner Streamlit calls
+│   ├── routes/ · models/           # Express routes, Mongoose schemas
+│   ├── rateLimit.js                # dependency-free per-IP limiter
+│   └── server.js
+├── ⚛️ client/src/                   # React app — one component per analysis tab
+├── 📊 streamlit_app.py             # second full frontend + AI chat
+├── 🧪 tests/                        # Jest suites + Streamlit AppTest smoke
+└── 🐳 Dockerfile · render.yaml      # Render deployment
 ```
 
-## Analysis Methodology
+---
 
-### Fundamental Analysis
-- **Valuation**: P/E (trailing & forward), PEG, P/B ratios
-- **Profitability**: ROE, ROA, profit margins
-- **Financial Health**: Debt-to-equity, current ratio
-- **Growth**: Revenue, profit, EPS growth trends
+## 📊 Analysis methodology
 
-### Technical Analysis
-- **Trend Indicators**: Moving averages (SMA/EMA)
-- **Momentum Oscillators**: RSI, MACD
-- **Volatility**: Bollinger Bands
-- **Volume Analysis**: Volume trends, average volume
-- **Support/Resistance**: Price level identification
+<details>
+<summary><b>🔵 Fundamental (25%)</b></summary>
 
-### Mutual Fund Conviction
-- **Institutional Holdings**: Tracking mutual fund portfolio changes
-- **Sentiment Analysis**: Bullish/bearish/neutral based on flow
-- **Holder Quality**: Ranking of funds by performance and AUM
-- **Trend Analysis**: Accumulation vs. distribution patterns
+- **Valuation** — P/E (trailing & forward), PEG, P/B
+- **Profitability** — ROE, ROA, profit & operating margins
+- **Financial health** — debt-to-equity, current ratio, interest coverage
+- Every metric scored against its **sector's** benchmark, not a global average
+  (`sector_map.py` normalizes free-form vendor strings like "Technology Services" → `IT_Services`)
+</details>
 
-### Growth Analysis
-- **Historical Growth**: QoQ and YoY growth rates
-- **Growth Quality**: Consistency and sustainability
-- **Projections**: Forward estimates based on management guidance
-- **Capital Allocation**: ROIC, reinvestment rates
+<details>
+<summary><b>🟣 Growth (25%)</b></summary>
 
-### Risk Assessment
-- **Market Risk**: Beta, volatility, correlation
-- **Credit Risk**: Debt levels, interest coverage
-- **Liquidity Risk**: Trading volume, bid-ask spread
-- **Operational Risk**: ROE, ROA, margins
-- **Sector Risk**: Industry-specific factors
-- **Geopolitical Risk**: Foreign exposure, currency risk
-- **Disruption Risk**: Innovation, obsolescence potential
+- **Historical** — QoQ and YoY revenue, profit, EPS, book value, dividends
+- **Quality** — consistency and sustainability, not one good quarter
+- **Projections** — forward estimates, blended with analyst targets where available
+</details>
 
-## License
+<details>
+<summary><b>🟠 Technical (20%)</b></summary>
 
-MIT License
+- **Trend** — SMA / EMA crossovers
+- **Momentum** — RSI, MACD
+- **Volatility** — Bollinger Bands
+- **Volume** — trend vs. average
+- **Levels** — support / resistance identification
+</details>
 
-## Acknowledgments
+<details>
+<summary><b>🟢 MF Conviction (15%)</b></summary>
 
-- Inspired by fundamental investing principles from Warren Buffett, Peter Lynch, and Ray Dalio
-- Technical analysis methodologies from John Murphy and Alexander Elder
-- Mutual fund research approaches from leading asset managers
-- Data providers: Money Control, Trendlyne, NSE, BSE
-- Open source community for various libraries and tools
+- Promoter / FII / DII / MF holding percentages and **quarter-on-quarter deltas**
+- Accumulation vs. distribution read
+- Sourced from Screener.in shareholding — the only real feed for this tab
+</details>
 
-## APP URL
-https://finai-stock-analysis.streamlit.app/
+<details>
+<summary><b>🔴 Risk (15%, higher = safer)</b></summary>
 
-## streamlit
-https://share.streamlit.io/
+- **Market** — beta, volatility, correlation
+- **Credit** — debt levels, interest coverage
+- **Liquidity** — trading volume
+- **Operational** — ROE, ROA, margin stability
+- **Sector · Geopolitical · Disruption** — industry factors, FX exposure, obsolescence risk
+</details>
 
+---
 
-## langsmith
-https://smith.langchain.com/o/73c9fa3f-e984-4805-8859-b4ffa11e2f94/projects?timeModel=%7B%22duration%22%3A%221d%22%7D
+## 📄 License
 
-## tavily websearch
+MIT — see [LICENSE](LICENSE).
 
-https://app.tavily.com/home
+## 🙏 Acknowledgments
+
+Fundamental principles from Warren Buffett, Peter Lynch and Ray Dalio · technical methodology from
+John Murphy and Alexander Elder · data from **yfinance**, **Screener.in** and **FinViz** · and the
+open-source libraries that made a two-language pipeline a weekend problem instead of a quarter's.
+
+<div align="center">
+
+---
+
+**[▶ Try the live app](https://finai-stock-analysis.streamlit.app/)** &nbsp;·&nbsp;
+**[⭐ Star on GitHub](https://github.com/SaiSatyaJagannadh/FinAI)** &nbsp;·&nbsp;
+**[✉️ Contact](mailto:saijagannadh0625@gmail.com)**
+
+Built by **Sai Jagannadh** · Educational tool, **not investment advice**
+
+</div>
